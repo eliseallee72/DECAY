@@ -1,4 +1,3 @@
-
 using System;
 using NUnit.Framework;
 using UnityEngine;
@@ -127,7 +126,8 @@ namespace Decay.Tests
         {
             var validator = new BattlePhaseTransitionValidator();
 
-            Assert.That(validator.IsTransitionAllowed(BattlePhase.Setup, BattlePhase.Rolling), Is.True);
+            Assert.That(validator.IsTransitionAllowed(BattlePhase.EnemySetup, BattlePhase.PlayerSetup), Is.True);
+            Assert.That(validator.IsTransitionAllowed(BattlePhase.PlayerSetup, BattlePhase.Rolling), Is.True);
             Assert.That(validator.IsTransitionAllowed(BattlePhase.Rolling, BattlePhase.EnemyReposition), Is.True);
             Assert.That(validator.IsTransitionAllowed(BattlePhase.EnemyReposition, BattlePhase.PlayerReposition), Is.True);
             Assert.That(validator.IsTransitionAllowed(BattlePhase.PlayerReposition, BattlePhase.DecayProcess), Is.True);
@@ -140,11 +140,11 @@ namespace Decay.Tests
         {
             var validator = new BattlePhaseTransitionValidator();
 
-            Assert.That(validator.IsTransitionAllowed(BattlePhase.RoundEnd, BattlePhase.Setup), Is.True);
+            Assert.That(validator.IsTransitionAllowed(BattlePhase.RoundEnd, BattlePhase.EnemySetup), Is.True);
             Assert.That(validator.IsTransitionAllowed(BattlePhase.RoundEnd, BattlePhase.GameEnd), Is.True);
-            Assert.That(validator.IsTransitionAllowed(BattlePhase.GameEnd, BattlePhase.Setup), Is.True);
+            Assert.That(validator.IsTransitionAllowed(BattlePhase.GameEnd, BattlePhase.EnemySetup), Is.True);
             Assert.That(validator.IsTransitionAllowed(BattlePhase.GameEnd, BattlePhase.BattleEnd), Is.True);
-            Assert.That(validator.IsTransitionAllowed(BattlePhase.BattleEnd, BattlePhase.Setup), Is.False);
+            Assert.That(validator.IsTransitionAllowed(BattlePhase.BattleEnd, BattlePhase.EnemySetup), Is.False);
         }
 
         [Test]
@@ -152,8 +152,10 @@ namespace Decay.Tests
         {
             var validator = new BattlePhaseTransitionValidator();
 
-            Assert.That(validator.IsTransitionAllowed(BattlePhase.Setup, BattlePhase.DecayProcess), Is.False);
-            Assert.Throws<InvalidOperationException>(() => validator.RequireAllowedTransition(BattlePhase.Setup, BattlePhase.DecayProcess));
+            Assert.That(validator.IsTransitionAllowed(BattlePhase.EnemySetup, BattlePhase.Rolling), Is.False);
+            Assert.That(validator.IsTransitionAllowed(BattlePhase.PlayerSetup, BattlePhase.DecayProcess), Is.False);
+            Assert.Throws<InvalidOperationException>(() =>
+                validator.RequireAllowedTransition(BattlePhase.EnemySetup, BattlePhase.Rolling));
         }
     }
 }
