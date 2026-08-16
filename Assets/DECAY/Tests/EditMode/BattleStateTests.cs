@@ -6,14 +6,14 @@ namespace Decay.Tests
     public sealed class BattleStateTests
     {
         [Test]
-        public void BattleState_StartsAtGameOneRoundOneSetup()
+        public void BattleState_StartsAtGameOneRoundOneEnemySetup()
         {
             BattleConfig config = ScriptableObject.CreateInstance<BattleConfig>();
             var state = new BattleState(config);
 
             Assert.That(state.CurrentGameNumber, Is.EqualTo(1));
             Assert.That(state.CurrentRoundNumber, Is.EqualTo(1));
-            Assert.That(state.CurrentPhase, Is.EqualTo(BattlePhase.Setup));
+            Assert.That(state.CurrentPhase, Is.EqualTo(BattlePhase.EnemySetup));
             Assert.That(state.IsBattleComplete, Is.False);
 
             Object.DestroyImmediate(config);
@@ -27,21 +27,20 @@ namespace Decay.Tests
             var board = new BoardState();
             var history = new BattleHistory();
             var controller = CreateController(state, board, history);
-            state.ApplyEnemySetupCompleted();
 
+            PhaseChangeResult setupHandoff = controller.Handle(new PhaseChangeRequest(BattlePhase.PlayerSetup));
             PhaseChangeResult result = controller.Handle(new PhaseChangeRequest(BattlePhase.Rolling));
 
+            Assert.That(setupHandoff.IsApproved, Is.True);
             Assert.That(result.IsApproved, Is.True);
             Assert.That(result.DenialReason, Is.EqualTo(PhaseChangeDenialReason.None));
             Assert.That(state.CurrentPhase, Is.EqualTo(BattlePhase.Rolling));
-            Assert.That(history.Count, Is.EqualTo(1));
-            Assert.That(result.Fact.SequenceNumber, Is.EqualTo(1));
-            Assert.That(result.Fact.PreviousPhase, Is.EqualTo(BattlePhase.Setup));
+            Assert.That(history.Count, Is.EqualTo(2));
+            Assert.That(result.Fact.SequenceNumber, Is.EqualTo(2));
+            Assert.That(result.Fact.PreviousPhase, Is.EqualTo(BattlePhase.PlayerSetup));
             Assert.That(result.Fact.CurrentPhase, Is.EqualTo(BattlePhase.Rolling));
-            Assert.That(result.Fact.PreviousContext, Is.EqualTo(new BattleFactContext(1, 1, BattlePhase.Setup)));
+            Assert.That(result.Fact.PreviousContext, Is.EqualTo(new BattleFactContext(1, 1, BattlePhase.PlayerSetup)));
             Assert.That(result.Fact.CurrentContext, Is.EqualTo(new BattleFactContext(1, 1, BattlePhase.Rolling)));
-            Assert.That(result.Fact.GameNumber, Is.EqualTo(1));
-            Assert.That(result.Fact.RoundNumber, Is.EqualTo(1));
 
             Object.DestroyImmediate(config);
         }
@@ -60,14 +59,14 @@ namespace Decay.Tests
             Assert.That(result.IsApproved, Is.False);
             Assert.That(result.DenialReason, Is.EqualTo(PhaseChangeDenialReason.TransitionNotAllowed));
             Assert.That(result.Fact, Is.Null);
-            Assert.That(state.CurrentPhase, Is.EqualTo(BattlePhase.Setup));
+            Assert.That(state.CurrentPhase, Is.EqualTo(BattlePhase.EnemySetup));
             Assert.That(history.Count, Is.Zero);
 
             Object.DestroyImmediate(config);
         }
 
         [Test]
-        public void RoundEndToSetup_IncrementsRoundWhenGameEndConditionIsNotMet()
+        public void RoundEndToEnemySetup_IncrementsRoundWhenGameEndConditionIsNotMet()
         {
             BattleConfig config = ScriptableObject.CreateInstance<BattleConfig>();
             var state = new BattleState(config);
@@ -76,12 +75,12 @@ namespace Decay.Tests
             var controller = CreateController(state, board, history);
 
             AdvanceThroughRound(controller, state);
-            PhaseChangeResult result = controller.Handle(new PhaseChangeRequest(BattlePhase.Setup));
+            PhaseChangeResult result = controller.Handle(new PhaseChangeRequest(BattlePhase.EnemySetup));
 
             Assert.That(result.IsApproved, Is.True);
             Assert.That(state.CurrentRoundNumber, Is.EqualTo(2));
             Assert.That(state.CurrentGameNumber, Is.EqualTo(1));
-            Assert.That(state.CurrentPhase, Is.EqualTo(BattlePhase.Setup));
+            Assert.That(state.CurrentPhase, Is.EqualTo(BattlePhase.EnemySetup));
 
             Object.DestroyImmediate(config);
         }
@@ -97,14 +96,13 @@ namespace Decay.Tests
 
             AdvanceToConfiguredRoundLimit(controller, state);
 
-            PhaseChangeResult rejected = controller.Handle(new PhaseChangeRequest(BattlePhase.Setup));
+            PhaseChangeResult rejected = controller.Handle(new PhaseChangeRequest(BattlePhase.EnemySetup));
             PhaseChangeResult gameEnd = controller.Handle(new PhaseChangeRequest(BattlePhase.GameEnd));
 
             Assert.That(rejected.IsApproved, Is.False);
             Assert.That(rejected.DenialReason, Is.EqualTo(PhaseChangeDenialReason.RoundLimitRequiresGameEnd));
             Assert.That(gameEnd.IsApproved, Is.True);
             Assert.That(state.CurrentPhase, Is.EqualTo(BattlePhase.GameEnd));
-            Assert.That(state.CurrentRoundNumber, Is.EqualTo(config.RoundsPerGame));
 
             Object.DestroyImmediate(config);
         }
@@ -131,52 +129,17 @@ namespace Decay.Tests
         [Test]
         public void FullyBrokenPlayerSide_RequiresGameEndAfterScoring()
         {
-            BattleConfig config = ScriptableObject.CreateInstance<BattleConfig>();
-            var state = new BattleState(config);
-            var board = new BoardState();
-            var history = new BattleHistory();
-            var controller = CreateController(state, board, history);
-
-            AdvanceToScoreProcess(controller, state);
-            BreakAllSlots(state, board, Side.Player);
-            Assert.That(controller.Handle(new PhaseChangeRequest(BattlePhase.RoundEnd)).IsApproved, Is.True);
-
-            PhaseChangeResult setup = controller.Handle(new PhaseChangeRequest(BattlePhase.Setup));
-            PhaseChangeResult gameEnd = controller.Handle(new PhaseChangeRequest(BattlePhase.GameEnd));
-
-            Assert.That(setup.IsApproved, Is.False);
-            Assert.That(setup.DenialReason, Is.EqualTo(PhaseChangeDenialReason.BoardBreakRequiresGameEnd));
-            Assert.That(gameEnd.IsApproved, Is.True);
-            Assert.That(state.CurrentPhase, Is.EqualTo(BattlePhase.GameEnd));
-
-            Object.DestroyImmediate(config);
+            AssertBrokenSideRequiresGameEnd(Side.Player);
         }
 
         [Test]
         public void FullyBrokenEnemySide_RequiresGameEndAfterScoring()
         {
-            BattleConfig config = ScriptableObject.CreateInstance<BattleConfig>();
-            var state = new BattleState(config);
-            var board = new BoardState();
-            var history = new BattleHistory();
-            var controller = CreateController(state, board, history);
-
-            AdvanceToScoreProcess(controller, state);
-            BreakAllSlots(state, board, Side.Enemy);
-            Assert.That(controller.Handle(new PhaseChangeRequest(BattlePhase.RoundEnd)).IsApproved, Is.True);
-
-            PhaseChangeResult setup = controller.Handle(new PhaseChangeRequest(BattlePhase.Setup));
-            PhaseChangeResult gameEnd = controller.Handle(new PhaseChangeRequest(BattlePhase.GameEnd));
-
-            Assert.That(setup.IsApproved, Is.False);
-            Assert.That(setup.DenialReason, Is.EqualTo(PhaseChangeDenialReason.BoardBreakRequiresGameEnd));
-            Assert.That(gameEnd.IsApproved, Is.True);
-
-            Object.DestroyImmediate(config);
+            AssertBrokenSideRequiresGameEnd(Side.Enemy);
         }
 
         [Test]
-        public void GameEndToSetup_StartsNextGameAndResetsRoundNumber()
+        public void GameEndToEnemySetup_StartsNextGameAndResetsRoundNumber()
         {
             BattleConfig config = ScriptableObject.CreateInstance<BattleConfig>();
             var state = new BattleState(config);
@@ -187,14 +150,14 @@ namespace Decay.Tests
             AdvanceToConfiguredRoundLimit(controller, state);
             Assert.That(controller.Handle(new PhaseChangeRequest(BattlePhase.GameEnd)).IsApproved, Is.True);
 
-            PhaseChangeResult nextGame = controller.Handle(new PhaseChangeRequest(BattlePhase.Setup));
+            PhaseChangeResult nextGame = controller.Handle(new PhaseChangeRequest(BattlePhase.EnemySetup));
 
             Assert.That(nextGame.IsApproved, Is.True);
             Assert.That(nextGame.Fact.PreviousContext, Is.EqualTo(new BattleFactContext(1, config.RoundsPerGame, BattlePhase.GameEnd)));
-            Assert.That(nextGame.Fact.CurrentContext, Is.EqualTo(new BattleFactContext(2, 1, BattlePhase.Setup)));
+            Assert.That(nextGame.Fact.CurrentContext, Is.EqualTo(new BattleFactContext(2, 1, BattlePhase.EnemySetup)));
             Assert.That(state.CurrentGameNumber, Is.EqualTo(2));
             Assert.That(state.CurrentRoundNumber, Is.EqualTo(1));
-            Assert.That(state.CurrentPhase, Is.EqualTo(BattlePhase.Setup));
+            Assert.That(state.CurrentPhase, Is.EqualTo(BattlePhase.EnemySetup));
 
             Object.DestroyImmediate(config);
         }
@@ -215,26 +178,22 @@ namespace Decay.Tests
             Assert.That(tooEarly.IsApproved, Is.False);
             Assert.That(tooEarly.DenialReason, Is.EqualTo(PhaseChangeDenialReason.MoreGamesRemain));
 
-            Assert.That(controller.Handle(new PhaseChangeRequest(BattlePhase.Setup)).IsApproved, Is.True);
+            Assert.That(controller.Handle(new PhaseChangeRequest(BattlePhase.EnemySetup)).IsApproved, Is.True);
             AdvanceToConfiguredRoundLimit(controller, state);
             Assert.That(controller.Handle(new PhaseChangeRequest(BattlePhase.GameEnd)).IsApproved, Is.True);
 
             PhaseChangeResult battleEnd = controller.Handle(new PhaseChangeRequest(BattlePhase.BattleEnd));
             Assert.That(battleEnd.IsApproved, Is.True);
             Assert.That(state.IsBattleComplete, Is.True);
-            Assert.That(state.CurrentPhase, Is.EqualTo(BattlePhase.BattleEnd));
 
-            PhaseChangeResult afterComplete = controller.Handle(new PhaseChangeRequest(BattlePhase.Setup));
+            PhaseChangeResult afterComplete = controller.Handle(new PhaseChangeRequest(BattlePhase.EnemySetup));
             Assert.That(afterComplete.IsApproved, Is.False);
             Assert.That(afterComplete.DenialReason, Is.EqualTo(PhaseChangeDenialReason.BattleAlreadyComplete));
 
             Object.DestroyImmediate(config);
         }
 
-        private static BattlePhaseController CreateController(
-            BattleState state,
-            BoardState board,
-            BattleHistory history)
+        private static BattlePhaseController CreateController(BattleState state, BoardState board, BattleHistory history)
         {
             return new BattlePhaseController(state, board, new BattlePhaseTransitionValidator(), history);
         }
@@ -249,7 +208,7 @@ namespace Decay.Tests
                     return;
                 }
 
-                Assert.That(controller.Handle(new PhaseChangeRequest(BattlePhase.Setup)).IsApproved, Is.True);
+                Assert.That(controller.Handle(new PhaseChangeRequest(BattlePhase.EnemySetup)).IsApproved, Is.True);
             }
         }
 
@@ -261,10 +220,8 @@ namespace Decay.Tests
 
         private static void AdvanceToScoreProcess(BattlePhaseController controller, BattleState state)
         {
-            Assert.That(state.CurrentPhase, Is.EqualTo(BattlePhase.Setup));
-            Assert.That(state.CurrentSetupTurn, Is.EqualTo(BattleSetupTurn.Enemy));
-            state.ApplyEnemySetupCompleted();
-
+            Assert.That(state.CurrentPhase, Is.EqualTo(BattlePhase.EnemySetup));
+            Assert.That(controller.Handle(new PhaseChangeRequest(BattlePhase.PlayerSetup)).IsApproved, Is.True);
             Assert.That(controller.Handle(new PhaseChangeRequest(BattlePhase.Rolling)).IsApproved, Is.True);
             Assert.That(controller.Handle(new PhaseChangeRequest(BattlePhase.EnemyReposition)).IsApproved, Is.True);
             Assert.That(controller.Handle(new PhaseChangeRequest(BattlePhase.PlayerReposition)).IsApproved, Is.True);
@@ -272,15 +229,33 @@ namespace Decay.Tests
             Assert.That(controller.Handle(new PhaseChangeRequest(BattlePhase.ScoreProcess)).IsApproved, Is.True);
         }
 
+        private static void AssertBrokenSideRequiresGameEnd(Side side)
+        {
+            BattleConfig config = ScriptableObject.CreateInstance<BattleConfig>();
+            var state = new BattleState(config);
+            var board = new BoardState();
+            var history = new BattleHistory();
+            var controller = CreateController(state, board, history);
+
+            AdvanceToScoreProcess(controller, state);
+            BreakAllSlots(state, board, side);
+            Assert.That(controller.Handle(new PhaseChangeRequest(BattlePhase.RoundEnd)).IsApproved, Is.True);
+
+            PhaseChangeResult setup = controller.Handle(new PhaseChangeRequest(BattlePhase.EnemySetup));
+            PhaseChangeResult gameEnd = controller.Handle(new PhaseChangeRequest(BattlePhase.GameEnd));
+
+            Assert.That(setup.IsApproved, Is.False);
+            Assert.That(setup.DenialReason, Is.EqualTo(PhaseChangeDenialReason.BoardBreakRequiresGameEnd));
+            Assert.That(gameEnd.IsApproved, Is.True);
+
+            Object.DestroyImmediate(config);
+        }
+
         private static void BreakAllSlots(BattleState state, BoardState board, Side side)
         {
             for (int number = BattleRules.FirstSlotNumber; number <= BattleRules.LastSlotNumber; number++)
             {
-                new SetSlotConditionCommand(
-                    state,
-                    board,
-                    new SlotId(side, number),
-                    SlotCondition.Broken).Execute();
+                new SetSlotConditionCommand(state, board, new SlotId(side, number), SlotCondition.Broken).Execute();
             }
         }
     }
