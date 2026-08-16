@@ -2,7 +2,8 @@ namespace Decay
 {
     /// <summary>
     /// Answers whether the current battle phase permits this side and source/target category to move.
-    /// Setup allows board/inventory movement for either side. Reposition is board-only for its named side.
+    /// Setup is subdivided authoritatively into Enemy Setup then Player Setup. Reposition is board-only
+    /// for its named side.
     /// </summary>
     internal sealed class MovementPhaseGate : IMoveDiceGate
     {
@@ -11,7 +12,7 @@ namespace Decay
             switch (context.BattleState.CurrentPhase)
             {
                 case BattlePhase.Setup:
-                    return MoveDiceDenialReason.None;
+                    return EvaluateSetup(context);
 
                 case BattlePhase.EnemyReposition:
                     return EvaluateReposition(context, Side.Enemy);
@@ -22,6 +23,17 @@ namespace Decay
                 default:
                     return MoveDiceDenialReason.PhaseDoesNotAllowMovement;
             }
+        }
+
+        private static MoveDiceDenialReason EvaluateSetup(MoveDiceGateContext context)
+        {
+            Side permittedSide = context.BattleState.CurrentSetupTurn == BattleSetupTurn.Enemy
+                ? Side.Enemy
+                : Side.Player;
+
+            return context.Request.ActingSide == permittedSide
+                ? MoveDiceDenialReason.None
+                : MoveDiceDenialReason.ActingSideDoesNotMatchSetupTurn;
         }
 
         private static MoveDiceDenialReason EvaluateReposition(MoveDiceGateContext context, Side permittedSide)
