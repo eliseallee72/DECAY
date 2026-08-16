@@ -80,7 +80,7 @@ namespace Decay.Tests
             Assert.That(first.Facts[0], Is.TypeOf<PhaseChangedFact>());
             Assert.That(first.Facts[1], Is.TypeOf<DiceRolledFact>());
             Assert.That(fixture.State.CurrentPhase, Is.EqualTo(BattlePhase.Rolling));
-            Assert.That(fixture.PlayerA.SelectedFaceIndex, Is.EqualTo(6));
+            Assert.That(fixture.PlayerA.CurrentFaceIndex, Is.EqualTo(6));
             Assert.That(fixture.RandomSource.RemainingCount, Is.Zero);
 
             Assert.That(second.IsRejected, Is.True);
