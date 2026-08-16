@@ -719,7 +719,7 @@ Gamble is known to reroll one selected own-side board dice during Reposition. It
 
 STEP 5 FIRST PASS - BOUNDED ROUND FLOW + ENEMY/PLAYER ACTION ORDER
 Last updated: 2026-08-16
-Baseline: GitHub branch step-4 at validated Step 4 checkpoint source. The existing step-5 branch was one clean commit behind step-4 and was fast-forwarded to the step-4 baseline before implementation.
+Baseline: GitHub branch step-4 at the current Step 4 checkpoint source; Step 4 Unity compilation/Test Runner validation remains pending. The existing step-5 branch was one clean commit behind step-4 and was fast-forwarded to the step-4 baseline before implementation.
 
 48. SETUP REMAINS ONE BATTLE PHASE; ACTOR ORDER IS AN AUTHORITATIVE SUB-TURN
 ADDED:
@@ -742,6 +742,7 @@ CHANGED:
 - MovementPhaseGate now reads BattleState.CurrentSetupTurn during BattlePhase.Setup.
 - Enemy MoveDiceRequests are permitted during Enemy Setup and Player requests are denied.
 - After CompleteEnemySetupCommand resolves, Player MoveDiceRequests are permitted and further Enemy Setup movement is denied.
+- BattlePhaseController also rejects a direct Setup -> Rolling PhaseChangeRequest with PhaseChangeDenialReason.EnemySetupIncomplete until CurrentSetupTurn is Player, so lower-level phase access cannot bypass the sequencing rule.
 - EnemyReposition and PlayerReposition continue to use the same existing MoveDiceController Request -> Gate -> Command -> Fact route and remain board-only.
 - Added MoveDiceDenialReason.ActingSideDoesNotMatchSetupTurn without renumbering existing denial values.
 
@@ -795,7 +796,7 @@ ADDED BattleControllerTests covering:
 - battle starts with Enemy Setup authority.
 - Enemy Setup completion hands authority to Player and records SetupTurnChangedFact.
 - Enemy Setup cannot complete twice in one round.
-- Roll request is rejected until Enemy Setup has completed.
+- Roll request is rejected until Enemy Setup has completed, and the lower-level BattlePhaseController independently rejects the same premature Setup -> Rolling transition.
 - RequestRoll enters Rolling, invokes the logical Roll exactly once, and cannot be repeated while already Rolling.
 - CompleteRoll rejects a Rolling phase that did not resolve through this BattleController.
 - CompleteRoll advances to EnemyReposition after the resolved Roll boundary.
@@ -806,6 +807,10 @@ REVISED MoveDiceControllerTests:
 - Existing Step 3 player-Setup fixtures now explicitly begin after the Enemy Setup handoff rather than assuming both Sides can act simultaneously.
 - Added denial coverage for Player movement during Enemy Setup and Enemy movement after Player Setup begins.
 - Existing Enemy Setup placement test explicitly starts on the Enemy Setup turn and still uses the same MoveDiceController.
+
+REVISED BattleStateTests:
+- Existing phase-progression helpers now explicitly complete Enemy Setup before requesting Setup -> Rolling.
+- Existing test count is unchanged; this removes the old assumption that Setup -> Rolling is legal before the enemy-first Setup boundary resolves.
 
 EXPECTED TEST COUNT:
 - Step 4 expected baseline: 155 EditMode cases.
@@ -819,6 +824,7 @@ STATIC / CONNECTOR REVIEW COMPLETED:
 - Setup actor order is authoritative runtime state, not a view convention.
 - Enemy/Player Setup and Enemy/Player Reposition share MoveDiceController rather than maintaining separate rule implementations.
 - BattleController uses BattlePhaseController for phase authority and RollExecutor for Roll authority.
+- BattlePhaseController independently protects Setup -> Rolling from bypassing incomplete Enemy Setup.
 - The Roll completion seam does not guess presentation duration.
 - No Enemy strategy, DECAY, SCORE, effect, or view authority was added to BattleController.
 - Invalid BattleSetupTurn values now fail explicitly instead of silently behaving like Player Setup.
@@ -830,7 +836,7 @@ NOT VALIDATED IN UNITY HERE:
 - Open in Unity 6000.5.8f1, confirm no red Console errors, and run all Decay.Tests.EditMode tests; expected total is 166 cases.
 
 RESOLVED STEP 3 / STEP 4 FOLLOW-UPS
-- I. Setup action sequencing: RESOLVED by BattleSetupTurn owned by BattleState and enforced through MovementPhaseGate.
+- I. Setup action sequencing: RESOLVED by BattleSetupTurn owned by BattleState and enforced through MovementPhaseGate plus the Setup -> Rolling progression guard.
 - M. Roll process invocation / phase orchestration: RESOLVED for the current foundation by BattleController.RequestRoll + CompleteRoll.
 
 OPEN / DEFERRED AFTER STEP 5 FIRST PASS
