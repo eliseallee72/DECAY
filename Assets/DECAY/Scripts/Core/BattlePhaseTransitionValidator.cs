@@ -1,4 +1,3 @@
-
 using System;
 
 namespace Decay
@@ -15,7 +14,9 @@ namespace Decay
 
             switch (currentPhase)
             {
-                case BattlePhase.Setup:
+                case BattlePhase.EnemySetup:
+                    return requestedPhase == BattlePhase.PlayerSetup;
+                case BattlePhase.PlayerSetup:
                     return requestedPhase == BattlePhase.Rolling;
                 case BattlePhase.Rolling:
                     return requestedPhase == BattlePhase.EnemyReposition;
@@ -28,9 +29,9 @@ namespace Decay
                 case BattlePhase.ScoreProcess:
                     return requestedPhase == BattlePhase.RoundEnd;
                 case BattlePhase.RoundEnd:
-                    return requestedPhase == BattlePhase.Setup || requestedPhase == BattlePhase.GameEnd;
+                    return requestedPhase == BattlePhase.EnemySetup || requestedPhase == BattlePhase.GameEnd;
                 case BattlePhase.GameEnd:
-                    return requestedPhase == BattlePhase.Setup || requestedPhase == BattlePhase.BattleEnd;
+                    return requestedPhase == BattlePhase.EnemySetup || requestedPhase == BattlePhase.BattleEnd;
                 case BattlePhase.BattleEnd:
                     return false;
                 default:
