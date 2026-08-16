@@ -9,7 +9,6 @@ namespace Decay
         FinalGameRequiresBattleEnd = 4,
         BattleAlreadyComplete = 5,
         BoardBreakRequiresGameEnd = 6,
-        GameEndConditionNotMet = 7,
-        EnemySetupIncomplete = 8
+        GameEndConditionNotMet = 7
     }
 }
