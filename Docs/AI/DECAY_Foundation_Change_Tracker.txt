@@ -717,3 +717,137 @@ Dice spawning/state-to-view binding and authored roll animation remain deferred.
 P. GAMBLE REROLL SOURCE / CAUSALITY
 Gamble is known to reroll one selected own-side board dice during Reposition. It should reuse IRandomSource, DiceRollResolver, and ApplyDiceRollCommand. When Facts need to distinguish initial Roll from Gamble/tutorial/effect causes, add the previously planned typed source/reason concept rather than overloading BattleFactContext.
 
+STEP 5 FIRST PASS - BOUNDED ROUND FLOW + ENEMY/PLAYER ACTION ORDER
+Last updated: 2026-08-16
+Baseline: GitHub branch step-4 at validated Step 4 checkpoint source. The existing step-5 branch was one clean commit behind step-4 and was fast-forwarded to the step-4 baseline before implementation.
+
+48. SETUP REMAINS ONE BATTLE PHASE; ACTOR ORDER IS AN AUTHORITATIVE SUB-TURN
+ADDED:
+- BattleSetupTurn with Enemy and Player values.
+- BattleState.CurrentSetupTurn as the single mutable owner of which Side may currently perform Setup movement.
+- Every new BattleState begins BattlePhase.Setup with BattleSetupTurn.Enemy.
+- RoundEnd -> Setup and GameEnd -> Setup reset CurrentSetupTurn to Enemy.
+- CompleteEnemySetupCommand changes the authoritative Setup turn from Enemy to Player and returns SetupTurnChangedFact.
+
+WHY:
+DECAY's glossary defines SETUP as one phase, while the rules separately require the Enemy to place/reposition before the Player. Splitting Setup into invented EnemySetup/PlayerSetup BattlePhase values would alter the documented phase model. BattleSetupTurn refines who may act inside the existing Setup phase without creating competing phase truth.
+
+PRESERVE:
+- BattleState remains the owner of current phase and Setup actor order.
+- Views, EnemyController, tutorials, and presentation must not maintain separate setup-turn flags.
+- Invalid/unrecognized BattleSetupTurn values fail clearly rather than silently defaulting to a Side.
+
+49. ENEMY SETUP AND PLAYER SETUP NOW USE THE SAME MOVEMENT AUTHORITY
+CHANGED:
+- MovementPhaseGate now reads BattleState.CurrentSetupTurn during BattlePhase.Setup.
+- Enemy MoveDiceRequests are permitted during Enemy Setup and Player requests are denied.
+- After CompleteEnemySetupCommand resolves, Player MoveDiceRequests are permitted and further Enemy Setup movement is denied.
+- EnemyReposition and PlayerReposition continue to use the same existing MoveDiceController Request -> Gate -> Command -> Fact route and remain board-only.
+- Added MoveDiceDenialReason.ActingSideDoesNotMatchSetupTurn without renumbering existing denial values.
+
+PRESERVE:
+- Enemy logic does not receive a privileged board-mutation route.
+- A future EnemyController plans actions, submits the same MoveDiceRequest used by Player/tutorial/developer callers, observes approvals/results, then reports that its bounded action sequence is complete.
+- BoardState remains occupancy authority and BattleInventoryState remains inventory membership authority.
+
+50. BATTLECONTROLLER OWNS BOUNDED FLOW, NOT THE RULES IT INVOKES
+ADDED:
+- BattleController as a plain-C# bounded orchestration owner.
+- BattleFlowResult and BattleFlowDenialReason for explicit approved/rejected orchestration requests.
+
+CURRENT FIRST-PASS BOUNDARIES:
+- CompleteEnemySetup: Enemy Setup -> Player Setup within BattlePhase.Setup.
+- RequestRoll: requires Player Setup, asks BattlePhaseController to enter Rolling, invokes RollExecutor exactly once, and leaves the battle in Rolling.
+- CompleteRoll: explicit completion boundary from resolved Rolling -> EnemyReposition.
+- CompleteEnemyReposition: EnemyReposition -> PlayerReposition.
+- RequestDecay: PlayerReposition -> DecayProcess.
+
+DO NOT EXPAND BATTLECONTROLLER AUTHORITY:
+- It does not validate or execute dice movement; MoveDiceController owns that route.
+- It does not choose enemy placements/repositions; future EnemyController/plan logic owns those choices.
+- It does not select random faces; RollExecutor/DiceRollResolver/IRandomSource own Roll results.
+- It does not calculate DECAY, SAVES, SCORE, GameEnd cleanup, or dice effects.
+- It does not spawn/move views or choose animation results.
+- It advances phases only through the existing BattlePhaseController/PhaseChangeRequest authority rather than mutating BattleState.CurrentPhase directly.
+
+51. ROLL NOW HAS AN EXPLICIT LOGICAL-RESULT / BLOCKING-PRESENTATION BOUNDARY
+CONFIRMED:
+- RequestRoll enters Rolling and executes the logical Roll once.
+- BattleController remains in Rolling after logical roll resolution until CompleteRoll is called.
+- `_isRollResolvedAwaitingCompletion` exists only inside BattleController to prove that this BattleController actually completed the logical roll before allowing the completion boundary.
+- CompleteRoll advances to EnemyReposition only after that logical result exists.
+
+FUTURE PRESENTATION WIRING:
+- When BattlePresentationDirector/runtime Roll presentation exists, it should consume the completed Roll facts/state and call the completion boundary only after the required blocking authored presentation reports real completion.
+- Do not replace this with a hardcoded timer or have animation choose/modify roll results.
+- Until presentation wiring exists, the composition root may call CompleteRoll immediately after it has handled RequestRoll's approved result.
+
+52. STEP 5 STOPS AT ENTERING DECAYPROCESS
+INTENTIONAL BOUNDARY:
+- RequestDecay changes PlayerReposition -> DecayProcess through the existing phase controller.
+- Step 5 does not manufacture placeholder DecayResolver, ScoreResolver, Save state, unstable cleanup, or fake process Facts merely to continue the round farther.
+
+WHY:
+The DECAY process has confirmed simultaneous opposing-pair ordering and save semantics that deserve their own resolver/executor work. Inventing a trivial placeholder now would create the disposable foundation explicitly prohibited by DECAY unity update.txt.
+
+53. STEP 5 EDITMODE COVERAGE ADDED / REVISED
+ADDED BattleControllerTests covering:
+- battle starts with Enemy Setup authority.
+- Enemy Setup completion hands authority to Player and records SetupTurnChangedFact.
+- Enemy Setup cannot complete twice in one round.
+- Roll request is rejected until Enemy Setup has completed.
+- RequestRoll enters Rolling, invokes the logical Roll exactly once, and cannot be repeated while already Rolling.
+- CompleteRoll rejects a Rolling phase that did not resolve through this BattleController.
+- CompleteRoll advances to EnemyReposition after the resolved Roll boundary.
+- one shared MoveDiceController follows Enemy Setup -> Player Setup -> Roll -> Enemy Reposition -> Player Reposition -> DecayProcess.
+- starting the next round resets Setup authority to Enemy.
+
+REVISED MoveDiceControllerTests:
+- Existing Step 3 player-Setup fixtures now explicitly begin after the Enemy Setup handoff rather than assuming both Sides can act simultaneously.
+- Added denial coverage for Player movement during Enemy Setup and Enemy movement after Player Setup begins.
+- Existing Enemy Setup placement test explicitly starts on the Enemy Setup turn and still uses the same MoveDiceController.
+
+EXPECTED TEST COUNT:
+- Step 4 expected baseline: 155 EditMode cases.
+- Step 5 adds 11 EditMode cases total: 9 BattleController cases plus 2 new movement sequencing cases.
+- Expected total after import: 166 EditMode cases.
+
+54. STEP 5 VALIDATION STATUS
+STATIC / CONNECTOR REVIEW COMPLETED:
+- step-5 was fast-forwarded cleanly from the step-4 baseline before edits; step-4 itself was not modified.
+- The Step 5 diff is code/tests/docs only; no scene, prefab, package, ProjectSettings, or presentation asset edits were required.
+- Setup actor order is authoritative runtime state, not a view convention.
+- Enemy/Player Setup and Enemy/Player Reposition share MoveDiceController rather than maintaining separate rule implementations.
+- BattleController uses BattlePhaseController for phase authority and RollExecutor for Roll authority.
+- The Roll completion seam does not guess presentation duration.
+- No Enemy strategy, DECAY, SCORE, effect, or view authority was added to BattleController.
+- Invalid BattleSetupTurn values now fail explicitly instead of silently behaving like Player Setup.
+- UnityProjectContext.md was updated to reflect the Step 5 first pass and current deferred boundaries.
+
+NOT VALIDATED IN UNITY HERE:
+- No Unity Editor/MCP or CI runner is connected in this environment.
+- Therefore this pass does NOT claim compilation or green tests.
+- Open in Unity 6000.5.8f1, confirm no red Console errors, and run all Decay.Tests.EditMode tests; expected total is 166 cases.
+
+RESOLVED STEP 3 / STEP 4 FOLLOW-UPS
+- I. Setup action sequencing: RESOLVED by BattleSetupTurn owned by BattleState and enforced through MovementPhaseGate.
+- M. Roll process invocation / phase orchestration: RESOLVED for the current foundation by BattleController.RequestRoll + CompleteRoll.
+
+OPEN / DEFERRED AFTER STEP 5 FIRST PASS
+Q. ENEMYCONTROLLER PLANNING / ACTION EXECUTION
+The authority path is ready, but actual enemy setup/reposition strategy is not implemented in Step 5. EnemyController should plan deterministic/weighted actions from authoritative state and submit the same MoveDiceRequests; it must never mutate BoardState directly. It should call CompleteEnemySetup / CompleteEnemyReposition only after its approved plan finishes.
+
+R. ROLL PRESENTATION COMPLETION WIRING
+BattleController now has the logical completion boundary. Runtime DiceView binding and BattlePresentationDirector must later display DiceRolledFact/current face and signal CompleteRoll after blocking animation completes. Presentation never selects the face or changes the result.
+
+S. PROCESSING / BLOCKING MOVEMENT GATES
+A real bounded flow owner now exists, but no asynchronous presentation/process participation model is wired yet. Do not create duplicate per-dice IsProcessing flags. Add the Processing/blocking Gate when the presentation/process executor exposes actual active participation that movement permission can read.
+
+T. DECAY + SAVE RESOLVER / EXECUTOR
+The next process foundation must implement the confirmed opposing SlotPairId 1..6 resolution, simultaneous same-number side handling, WILLDECAY/TARGETED/SAVE/WILLSAVE/SAVIOR/SAVED semantics, deterministic save consumption, slot break/unstable results, structured Facts, and presentation-completion boundaries without moving rule authority into animation.
+
+U. SCORE / ROUNDEND / GAMEEND LIFECYCLE
+Score order, Unstable ejection/break cleanup, RoundEnd branching, board reset, DECAYED dice repopulation from the correct source, game score transfer/reset, and battle-end comparison remain separate explicit lifecycle work. Do not hide these inside BattleState or BattleController simply to make the loop advance.
+
+V. GAMBLE REROLL SOURCE / CAUSALITY
+Gamble remains deferred and should reuse IRandomSource, DiceRollResolver, and ApplyDiceRollCommand during Reposition. Add a typed operation source/reason when Facts need to distinguish Roll from Gamble/tutorial/effect causes rather than overloading BattleFactContext.
