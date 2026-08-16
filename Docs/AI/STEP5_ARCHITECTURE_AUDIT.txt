@@ -1,0 +1,76 @@
+DECAY STEP 5 ARCHITECTURE AUDIT
+Date: 2026-08-16
+Branch: step-5
+Unity target: 6000.5.8f1
+
+SCOPE
+This audit rechecks Step 5 against DECAY unity update.txt and the Foundation Change Tracker, then compares transferable architecture patterns against CardHouse and spire-codex. CardHouse and spire-codex remain references only; DECAY rules and reviewed DECAY decisions outrank them.
+
+RESULT
+Step 5 is structurally sound for its intended boundary after the hardening changes in this audit. It preserves authoritative state ownership, controlled movement, injected randomness, definition/runtime separation, structured Facts, and a bounded orchestration seam for future presentation. It intentionally stops at entering DecayProcess rather than manufacturing temporary Decay/Score implementations.
+
+FIXES MADE DURING AUDIT
+1. BattlePhaseController.Handle changed from public to internal so external gameplay/view/AI assemblies cannot bypass BattleController orchestration.
+2. RollExecutor.ExecuteRoll changed from public to internal so external gameplay/view/AI assemblies cannot bypass BattleController.RequestRoll and the Roll completion seam.
+3. Added ArchitectureBoundaryTests to lock both visibility rules.
+4. Canonical setup denial terminology changed to ActingSideDoesNotMatchSetupPhase; old SetupTurn name remains an obsolete numeric alias only.
+5. Restored ProjectSettings from DECAY main because step-4/step-5 had lost that Unity project root. ProjectVersion is 6000.5.8f1. Packages is unchanged between main and Step 5.
+
+DECAY UNITY SPEC CHECK
+PASS / STRONG:
+- One authoritative owner per mutable fact: BattleState phase, BoardState occupancy, BattleInventoryState membership, dice-local facts in DiceRuntimeState.
+- Definitions remain authored/read-only; runtime mutation is on runtime state.
+- Movement follows Request -> Gates -> approved Command -> Fact. Gates read authoritative state and do not mutate.
+- Enemy and Player movement share the same movement authority; enemy code will not receive a privileged BoardState path.
+- Board/inventory cross-owner transfer is centralized and prevalidated before mutation.
+- Randomness is injected through IRandomSource; Roll does not use UnityEngine.Random.
+- Roll resolves deterministic choices before mutating dice, preventing half-applied board Roll from scripted-source exhaustion/invalid values.
+- BattleController owns bounded flow; Roll presentation can delay completion without choosing results.
+- Step 5 does not invent fake Decay/Save/Score state to continue the loop.
+- Stable definition and runtime instance identity remain separated, including EffectId vs EffectInstanceId.
+
+DEFERRED / VISIBLE:
+- A fatal invariant/scripted RNG exception after entering Rolling can leave BattleState in Rolling without a completed Roll boundary. RollExecutor prevents half-mutated dice, but phase rollback/fault semantics are not yet defined. Do not invent rollback until process failure policy is designed.
+- BattleSetupTurn compatibility helpers remain internal/derived only for older test fixtures. Remove after fixtures migrate to explicit PlayerSetup transitions.
+- Processing/blocking Gates wait for a real presentation/process owner.
+- Runtime views, EnemyController strategy, Decay/Save, Score, GameEnd cleanup, effects execution, tutorial, and persistence remain later steps.
+
+CARDHOUSE COMPARISON
+Useful patterns retained:
+- Gate<T> answers a narrow permission question.
+- GateCollection<T> composes permissions.
+- CardGroup centralizes container membership and delegates layout to strategy/settings.
+- EventChain demonstrates presentation/action sequencing with completion.
+
+DECAY deliberately improves/changes these patterns:
+- MoveDiceGateCollection is not a public mutable gameplay collection and returns typed denial reasons instead of only bool.
+- BoardState and BattleInventoryState, not a presentation MonoBehaviour, own gameplay membership.
+- BoardInventoryTransferExecutor coordinates transfers without creating a third location owner.
+- DECAY does not copy CardHouse's public mutable MountedCards/Card.Group duplication, static presentation communication, or UnityEngine.Random usage.
+- DECAY presentation completion may sequence flow, but does not become rule authority.
+
+SPIRE-CODEX COMPARISON
+spire-codex documents a reverse-engineering pipeline that extracts/decompiles the shipped game's .NET code and parses the exposed architecture. It is not the original source repository, but it is useful evidence of mature roguelike structure.
+
+Useful exposed patterns:
+- Typed card/model data and named dynamic gameplay values.
+- Typed powers with explicit stack types and typed command application.
+- Enemy move state machines with cycle/random/conditional/mixed planning.
+- Events with explicit preconditions and structured choice/outcome branches.
+- Separation between authored/model identity and runtime dynamic state.
+
+DECAY implications:
+- EffectRuntimeStateCollection keyed by EffectInstanceId is the right direction; repeated EffectId occurrences must remain distinct when sources/runtime state differ.
+- Future effect families should define their own source/stack semantics instead of becoming one generic mutation blob.
+- Future EnemyController should plan from authoritative state and submit ordinary requests; cycle/random/conditional strategy data is a useful pattern, not a reason to mutate BoardState directly.
+- Future tutorial/event eligibility should be expressed as read-only permission/precondition logic separate from effect/outcome commands.
+- Structured Facts/Commands are compatible with the mature-game command/state patterns exposed by spire-codex.
+
+LOCAL VALIDATION STILL REQUIRED
+This audit is static/repository-level. Unity Editor compilation and Test Runner were not available here.
+Expected audited Step 5 EditMode count: 168.
+After opening in Unity 6000.5.8f1:
+- allow import/compile;
+- confirm no new red Console errors;
+- run all Decay.Tests.EditMode tests;
+- verify expected 168 cases.
