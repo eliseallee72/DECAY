@@ -1,0 +1,159 @@
+
+DECAY UNITY FOUNDATION CHANGE TRACKER
+Last updated: 2026-08-15
+
+PURPOSE
+This file travels with the Unity rebuild and records architecture changes that remove or supersede earlier foundation behavior, plus integration rules future steps must preserve. Update it when a later step changes an earlier public type, ownership rule, test assumption, or migration requirement.
+
+STEP 1 REVISION - CHANGES MADE
+
+1. DICE LOCATION AUTHORITY REMOVED FROM DiceRuntimeState
+REMOVED:
+- DiceLocation and DiceLocationKind.
+- DiceRuntimeState.Location.
+- MoveToBoard, MoveToBattleInventory, and MarkPending.
+
+REPLACEMENT / FUTURE OWNER:
+- BoardState will own board slot occupancy.
+- BattleInventoryState will own battle-inventory membership.
+- DiceRuntimeState retains only dice-local battle facts such as IsDecayedForCurrentGame.
+- Interaction availability is determined by Gates from authoritative state; do not recreate an Unavailable location enum.
+
+TESTS CHANGED:
+- Tests that required DiceRuntimeState to reject opposing-side movement were removed because movement validation belongs to the future Board request/gate/controller path.
+- Tests no longer assert that DECAYED is a DiceLocationKind.
+
+2. SLOT IDENTITY AND OPPOSING PAIRS CHANGED
+CHANGED:
+- SlotId.Index -> SlotId.Number (public logical numbers remain 1 through 6).
+- Serialized backing field _index -> _number with FormerlySerializedAs for safety.
+- SlotId no longer implements IComparable and no longer supplies a generic gameplay ordering.
+- FirstSlotIndex / LastSlotIndex -> FirstSlotNumber / LastSlotNumber.
+
+ADDED:
+- SlotPairId explicitly represents the opposing Enemy + Player slots with the same Number.
+- SlotIndexConverter is the single one-based Slot Number <-> zero-based storage-index conversion path.
+
+FUTURE RULE:
+- DecayResolver must iterate numbered SlotPairId values from 1 through 6 and resolve both sides of each numbered pair as one resolution step.
+- Do not implement Decay as independently ordered 1E -> 1P -> 2E -> 2P operations.
+- Do not assume the Decay ordering automatically applies to every future dice effect. A process owns its own ordering rule.
+
+3. ROLL VALUE IS NOW A HARD 1-6 INVARIANT
+ADDED / CHANGED:
+- BattleRules.MinimumRollValue = 1 and MaximumRollValue = 6.
+- RollValueRules centralizes validation.
+- DiceFaceDefinition uses Inspector Range(1,6) and rejects invalid authored values.
+- DiceFaceSeed rejects invalid values.
+- DiceRuntimeSeed validates face roll values.
+- DiceFaceRuntimeState.SetRollValue rejects values outside 1-6.
+
+FUTURE RULE:
+- Effects may mutate ROLL VALUE only to another value from 1 through 6.
+- Values above/below this range belong in SCORE VALUE or another explicitly designed value, never ROLL VALUE.
+
+4. EFFECT RUNTIME IDENTITY CHANGED
+CHANGED:
+- IEffectRuntimeState now exposes both EffectInstanceId InstanceId and EffectId EffectId.
+- Shared EffectRuntimeStateCollection keys runtime effect-state storage by EffectInstanceId, not EffectId; DiceRuntimeState uses this shared implementation and future charm/battle owners may reuse it.
+- Multiple runtime occurrences with the same EffectId are explicitly allowed.
+- Duplicate EffectInstanceId on one dice is rejected.
+
+WHY:
+Existing planned dice/charms contain repeated triggers, persistent bonuses, and effects that can be supplied by multiple sources. EffectId identifies authored behavior; it cannot safely identify one runtime occurrence.
+
+FUTURE RULE:
+- The effect executor/factory must assign battle-runtime unique EffectInstanceId values for stateful runtime occurrences. EffectInstanceId is not permanent content/save identity.
+- Reuse EffectRuntimeStateCollection rather than creating parallel registration rules for dice, charms, or other effect owners.
+- Concrete effect context/state must preserve whatever source information that effect needs (dice, face, charm, trigger, target, etc.).
+- Do not merge runtime states only because EffectId matches.
+- Exact stacking/source semantics remain effect-specific and should be approved when each effect family is implemented.
+
+5. CONTENT IDS NOW ENFORCE STABLE CATEGORY FORMAT
+CHANGED:
+- DiceId requires dice.name.
+- EffectId requires effect.name.
+- DiceTagId requires tag.name.
+- Names are lowercase; the name portion uses lowercase letters, numbers, and underscores.
+- Constructor input is trimmed; serialized invalid forms fail IsValid/TryValidate.
+- Previous test IDs such as neutral-d6 and starter were replaced by dice.neutral_d6 and tag.starter.
+
+FILE ORGANIZATION:
+- Former ContentIds.cs was split so DiceId, OwnedDiceId, EffectId, DiceTagId, and ContentIdValidator each have a focused file.
+
+6. DEFINITION GRAPH VALIDATION STRENGTHENED
+CHANGED:
+- DiceDefinition and DiceFaceDefinition now call EffectDefinition.TryValidate instead of checking only for a non-empty EffectId.
+- DiceRuntimeSeed also recursively validates referenced effect definitions.
+- Duplicate authored EffectId references remain rejected within one dice-level list or one face-level list; this does NOT prevent multiple runtime occurrences.
+
+7. BATTLE PHASE PROGRESSION CHANGED
+ADDED:
+- BattlePhaseTransitionValidator.
+
+CHANGED:
+- Tests no longer use numeric enum comparisons to prove process order.
+- BattlePhase numeric values are serialization identities only.
+
+FUTURE RULE:
+- BattlePhaseController must ask BattlePhaseTransitionValidator before authoritative phase changes.
+- Never use CurrentPhase++, enum arithmetic, or numeric ordering as battle-flow authority.
+- Current explicit branches include RoundEnd -> Setup/GameEnd and GameEnd -> Setup/BattleEnd.
+
+8. BATTLE HISTORY FOUNDATION ADDED
+ADDED:
+- BattleFact base with one-time assigned SequenceNumber.
+- BattleHistory records facts in resolved order and assigns monotonic sequence numbers.
+
+FUTURE RULE:
+- Add concrete Facts only as their systems are implemented (DiceRolledFact, DiceMovedFact, SaveCreatedFact, etc.).
+- Each concrete Fact must contain the stable identities and battle/game/round/side/slot/source/target/value context needed to understand that fact.
+- BattleHistory records completed results; it never becomes current gameplay authority.
+
+9. CONFIGURATION DEFAULT SOURCE CLEANUP
+CHANGED:
+- Removed BattleRules.DefaultGamesPerBattle, DefaultRoundsPerGame, and DefaultBattleInventoryCapacity.
+- BattleConfig remains the editor-authored configured source for games/rounds/capacity; its field initializers are creation defaults, not a second runtime rule source.
+- Default asset names now move toward the documented prefixes (for example conf_BATTLE_New, def_DICE_New, catalog_DICE).
+
+10. RUNTIME SEED FILE / PERSISTENCE BOUNDARY
+CHANGED:
+- DiceFaceSeed moved into its own file.
+- DiceRuntimeSeed is explicitly documented as runtime construction data.
+
+FUTURE RULE:
+- Do not serialize DiceRuntimeSeed as save data because it contains EffectDefinition Unity object references.
+- Save data must use stable IDs and explicit serializable values, then resolve definitions through catalogs/repositories when loading.
+
+11. TESTS THAT WERE INTENTIONALLY REWRITTEN
+REMOVED/SUPERSEDED TEST ASSUMPTIONS:
+- DiceRuntimeState owns board location.
+- DECAYED maps to DiceLocationKind.Unavailable.
+- DiceRuntimeState itself validates board-side movement.
+- SlotId.Index is the public slot identity.
+- BattlePhase ordinal values define legal transition order.
+- Content IDs may be arbitrary strings such as neutral-d6.
+
+ADDED TEST COVERAGE:
+- SlotPairId opposing-pair identity.
+- Shared slot storage-index conversion.
+- Default SlotId invalidity.
+- Explicit BattlePhaseTransitionValidator paths and rejected skips.
+- Authored, seeded, and runtime ROLL VALUE 1-6 enforcement.
+- Multiple runtime occurrences of one EffectId with distinct EffectInstanceId values.
+- Duplicate effect-instance rejection.
+- Recursive EffectDefinition validation.
+- BattleHistory monotonic sequence assignment and one-time recording.
+
+OPEN / DEFERRED DECISIONS TO KEEP VISIBLE
+A. GAMEMAKER OWNED DICE ID 0
+The GameMaker reference may contain permanent dice IDs beginning at 0, while Unity OwnedDiceId currently requires positive values (>0). Before save migration/import is implemented, explicitly decide whether legacy ID 0 must be supported or remapped. Do not silently change persistent identity.
+
+B. EFFECT SOURCE AND STACKING SEMANTICS
+EffectInstanceId now allows repeated runtime occurrences, but concrete source/stacking rules are intentionally NOT generalized yet. Resolve them by effect family when implementing effects; preserve source identity when needed.
+
+C. PROCESS-SPECIFIC ORDERING
+Decay pair ordering is confirmed: numbered opposing pairs 1 through 6, both sides in each pair as one resolution step. Scoring/effect ordering may require more specific rules later. Do not manufacture one universal ordering abstraction.
+
+D. UNITY VALIDATION
+This revision was produced without a connected Unity Editor. Static code/reference validation can be done here, but Unity 6000.5.8f1 compilation and EditMode Test Runner results must be checked locally after import.
