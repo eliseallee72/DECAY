@@ -6,6 +6,8 @@ namespace Decay
     /// <summary>
     /// Performs the logical Roll process for every occupied board slot. This executor decides and
     /// commits rule results only; authored roll presentation is a later consumer of DiceRolledFacts.
+    /// Full-board Roll invocation is internal so gameplay callers cannot bypass BattleController's
+    /// phase and blocking-presentation boundaries.
     /// </summary>
     public sealed class RollExecutor
     {
@@ -29,7 +31,7 @@ namespace Decay
             _rollResolver = new DiceRollResolver(randomSource ?? throw new ArgumentNullException(nameof(randomSource)));
         }
 
-        public IReadOnlyList<DiceRolledFact> ExecuteRoll()
+        internal IReadOnlyList<DiceRolledFact> ExecuteRoll()
         {
             if (_battleState.CurrentPhase != BattlePhase.Rolling)
             {
