@@ -1,0 +1,73 @@
+DECAY FOUNDATION CHANGE TRACKER - STEP 5 REVISION
+Last updated: 2026-08-16
+Baseline: step-4
+Supersedes: the earlier Step 5 first-pass sections 48-54 that modeled Enemy/Player Setup as BattleSetupTurn inside BattlePhase.Setup.
+
+PURPOSE
+This revision records the approved Step 5 architecture change while preserving the existing main tracker history. The next consolidation pass should merge this revision into DECAY_Foundation_Change_Tracker.txt and remove the superseded Step 5 wording.
+
+STEP 5 REVISED FIRST PASS - EXPLICIT ENEMY/PLAYER PHASES
+
+1. SETUP ORDER IS NOW PART OF AUTHORITATIVE BATTLE PHASE
+CHANGED:
+- BattlePhase now contains EnemySetup and PlayerSetup as separate authoritative phases.
+- The round flow is EnemySetup -> PlayerSetup -> Rolling -> EnemyReposition -> PlayerReposition -> DecayProcess.
+- BattleState starts every battle in EnemySetup.
+- RoundEnd -> EnemySetup starts the next round; GameEnd -> EnemySetup starts the next game.
+- The previous mutable BattleState.CurrentSetupTurn sub-state is removed as gameplay authority.
+
+SERIALIZATION SAFETY:
+- EnemySetup retains numeric value 0, preserving the old serialized Setup value.
+- Rolling through BattleEnd keep their existing numeric values 1 through 8.
+- PlayerSetup is added as value 9.
+- BattlePhase.Setup remains only as an obsolete migration alias to EnemySetup. New runtime code must not use it as an independent state.
+
+WHY:
+Elise explicitly approved making Enemy Setup, Player Setup, Enemy Reposition, and Player Reposition first-class orchestration stages for longevity and safety. This gives one authoritative answer to both phase and acting-side order instead of storing phase plus a second mutable setup-turn fact.
+
+2. MOVEMENT AUTHORITY FOLLOWS THE EXPLICIT PHASES
+CHANGED:
+- MovementPhaseGate permits Enemy inventory/board movement during EnemySetup only.
+- MovementPhaseGate permits Player inventory/board movement during PlayerSetup only.
+- EnemyReposition remains Enemy board-only movement.
+- PlayerReposition remains Player board-only movement.
+- All four stages continue through the same MoveDiceController Request -> Gate -> Command -> Fact route.
+
+PRESERVE:
+- Enemy logic receives no privileged BoardState mutation path.
+- BoardState remains occupancy authority; BattleInventoryState remains battle-inventory membership authority.
+- Reposition never permits board/inventory exchange.
+
+3. BATTLECONTROLLER OWNS BOUNDED ORCHESTRATION
+CHANGED:
+- BattleController.CompleteEnemySetup now requests EnemySetup -> PlayerSetup through BattlePhaseController and records the normal PhaseChangedFact.
+- RequestRoll requires PlayerSetup, transitions to Rolling, and invokes Step 4 RollExecutor exactly once.
+- CompleteRoll remains the explicit logical-result/presentation-completion seam before EnemyReposition.
+- CompleteEnemyReposition advances EnemyReposition -> PlayerReposition.
+- RequestDecay advances PlayerReposition -> DecayProcess.
+
+REMOVED:
+- CompleteEnemySetupCommand and SetupTurnChangedFact from the earlier sub-turn pass. Their authority is replaced by the normal BattlePhaseController + PhaseChangedFact path.
+
+4. PROCESSING / PRESENTATION BOUNDARY
+PRESERVE:
+- BattleController owns the bounded logical Roll completion state needed to prevent duplicate progression.
+- Do not add per-dice or view-owned IsProcessing flags.
+- Future blocking Roll presentation consumes completed Roll facts/state and calls CompleteRoll when presentation actually completes.
+- Presentation does not select faces, mutate roll results, or guess rule timing.
+
+5. INTENTIONAL STEP 5 STOP POINT
+- Step 5 stops after entering DecayProcess.
+- Enemy setup/reposition strategy, DecayResolver, saves, scoring, unstable cleanup, GameEnd repopulation, and runtime views remain separate future work.
+- Do not manufacture placeholder implementations merely to make the loop continue.
+
+6. TEST / VALIDATION EXPECTATION
+- Step 4 expected baseline remains 155 EditMode cases pending local Step 4 Unity validation.
+- Step 5 retains the earlier first-pass test-count expectation of 166 EditMode cases after the revised tests are imported.
+- This environment cannot run Unity 6000.5.8f1; local compilation and all EditMode tests are still required before Step 5 is considered validated.
+
+7. TEMPORARY MIGRATION COMPATIBILITY
+- BattleSetupTurn and a derived BattleState.CurrentSetupTurn compatibility projection remain only so older Step 5 test fixtures can compile while they are migrated.
+- The projection is derived from CurrentPhase and is not mutable authoritative state.
+- BattleState.ApplyEnemySetupCompleted remains an obsolete internal test-migration hook only; production BattleController uses BattlePhaseController.
+- Remove these compatibility surfaces after the remaining Step 3/5 movement fixtures are rewritten to enter PlayerSetup through the normal phase controller.
