@@ -56,8 +56,12 @@ namespace Decay.Tests
             var fixture = new BattleFlowFixture(scriptedRolls: new[] { 6 });
             fixture.PlaceDirect(fixture.PlayerA.InstanceId, new SlotId(Side.Player, 1));
 
+            PhaseChangeResult directPhaseRequest = fixture.PhaseController.Handle(
+                new PhaseChangeRequest(BattlePhase.Rolling));
             BattleFlowResult result = fixture.Controller.RequestRoll();
 
+            Assert.That(directPhaseRequest.IsRejected, Is.True);
+            Assert.That(directPhaseRequest.DenialReason, Is.EqualTo(PhaseChangeDenialReason.EnemySetupIncomplete));
             Assert.That(result.IsRejected, Is.True);
             Assert.That(result.DenialReason, Is.EqualTo(BattleFlowDenialReason.EnemySetupMustComplete));
             Assert.That(fixture.State.CurrentPhase, Is.EqualTo(BattlePhase.Setup));
