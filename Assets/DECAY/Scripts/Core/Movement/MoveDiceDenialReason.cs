@@ -22,6 +22,8 @@ namespace Decay
         // Step 3 does not manufacture processing/tutorial/blocking state merely to use these.
         ProcessingBlocksMovement = 15,
         TutorialRestriction = 16,
-        BlockingOperationInProgress = 17
+        BlockingOperationInProgress = 17,
+
+        ActingSideDoesNotMatchSetupTurn = 18
     }
 }
