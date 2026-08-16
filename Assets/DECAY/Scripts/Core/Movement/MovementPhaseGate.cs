@@ -1,11 +1,9 @@
-using System;
-
 namespace Decay
 {
     /// <summary>
     /// Answers whether the current battle phase permits this side and source/target category to move.
-    /// Setup is subdivided authoritatively into Enemy Setup then Player Setup. Reposition is board-only
-    /// for its named side.
+    /// EnemySetup and PlayerSetup allow board/inventory movement for their named Side. Reposition is
+    /// board-only for its named Side.
     /// </summary>
     internal sealed class MovementPhaseGate : IMoveDiceGate
     {
@@ -13,8 +11,11 @@ namespace Decay
         {
             switch (context.BattleState.CurrentPhase)
             {
-                case BattlePhase.Setup:
-                    return EvaluateSetup(context);
+                case BattlePhase.EnemySetup:
+                    return EvaluateSetup(context, Side.Enemy);
+
+                case BattlePhase.PlayerSetup:
+                    return EvaluateSetup(context, Side.Player);
 
                 case BattlePhase.EnemyReposition:
                     return EvaluateReposition(context, Side.Enemy);
@@ -27,24 +28,8 @@ namespace Decay
             }
         }
 
-        private static MoveDiceDenialReason EvaluateSetup(MoveDiceGateContext context)
+        private static MoveDiceDenialReason EvaluateSetup(MoveDiceGateContext context, Side permittedSide)
         {
-            Side permittedSide;
-            switch (context.BattleState.CurrentSetupTurn)
-            {
-                case BattleSetupTurn.Enemy:
-                    permittedSide = Side.Enemy;
-                    break;
-
-                case BattleSetupTurn.Player:
-                    permittedSide = Side.Player;
-                    break;
-
-                default:
-                    throw new InvalidOperationException(
-                        $"Unsupported setup turn {context.BattleState.CurrentSetupTurn}.");
-            }
-
             return context.Request.ActingSide == permittedSide
                 ? MoveDiceDenialReason.None
                 : MoveDiceDenialReason.ActingSideDoesNotMatchSetupTurn;
