@@ -5,16 +5,15 @@ namespace Decay.Tests
     public sealed class BattleControllerTests
     {
         [Test]
-        public void BattleFlow_StartsWithEnemySetupAuthority()
+        public void BattleFlow_StartsInEnemySetup()
         {
             var fixture = new BattleFlowFixture();
 
-            Assert.That(fixture.State.CurrentPhase, Is.EqualTo(BattlePhase.Setup));
-            Assert.That(fixture.State.CurrentSetupTurn, Is.EqualTo(BattleSetupTurn.Enemy));
+            Assert.That(fixture.State.CurrentPhase, Is.EqualTo(BattlePhase.EnemySetup));
         }
 
         [Test]
-        public void CompleteEnemySetup_HandsAuthorityToPlayerAndRecordsFact()
+        public void CompleteEnemySetup_AdvancesToPlayerSetupAndRecordsPhaseFact()
         {
             var fixture = new BattleFlowFixture();
 
@@ -22,21 +21,19 @@ namespace Decay.Tests
 
             Assert.That(result.IsApproved, Is.True);
             Assert.That(result.DenialReason, Is.EqualTo(BattleFlowDenialReason.None));
-            Assert.That(fixture.State.CurrentPhase, Is.EqualTo(BattlePhase.Setup));
-            Assert.That(fixture.State.CurrentSetupTurn, Is.EqualTo(BattleSetupTurn.Player));
+            Assert.That(fixture.State.CurrentPhase, Is.EqualTo(BattlePhase.PlayerSetup));
             Assert.That(result.Facts.Count, Is.EqualTo(1));
-            Assert.That(result.Facts[0], Is.TypeOf<SetupTurnChangedFact>());
+            Assert.That(result.Facts[0], Is.TypeOf<PhaseChangedFact>());
 
-            var fact = (SetupTurnChangedFact)result.Facts[0];
-            Assert.That(fact.PreviousTurn, Is.EqualTo(BattleSetupTurn.Enemy));
-            Assert.That(fact.CurrentTurn, Is.EqualTo(BattleSetupTurn.Player));
-            Assert.That(fact.Context.Phase, Is.EqualTo(BattlePhase.Setup));
+            var fact = (PhaseChangedFact)result.Facts[0];
+            Assert.That(fact.PreviousPhase, Is.EqualTo(BattlePhase.EnemySetup));
+            Assert.That(fact.CurrentPhase, Is.EqualTo(BattlePhase.PlayerSetup));
             Assert.That(fact.SequenceNumber, Is.EqualTo(1));
             Assert.That(fixture.History.Facts[0], Is.SameAs(fact));
         }
 
         [Test]
-        public void CompleteEnemySetup_CannotRunTwiceInOneSetup()
+        public void CompleteEnemySetup_CannotRunTwiceInOneRound()
         {
             var fixture = new BattleFlowFixture();
             Assert.That(fixture.Controller.CompleteEnemySetup().IsApproved, Is.True);
@@ -45,8 +42,8 @@ namespace Decay.Tests
             BattleFlowResult result = fixture.Controller.CompleteEnemySetup();
 
             Assert.That(result.IsRejected, Is.True);
-            Assert.That(result.DenialReason, Is.EqualTo(BattleFlowDenialReason.EnemySetupAlreadyComplete));
-            Assert.That(fixture.State.CurrentSetupTurn, Is.EqualTo(BattleSetupTurn.Player));
+            Assert.That(result.DenialReason, Is.EqualTo(BattleFlowDenialReason.WrongPhase));
+            Assert.That(fixture.State.CurrentPhase, Is.EqualTo(BattlePhase.PlayerSetup));
             Assert.That(fixture.History.Count, Is.EqualTo(historyCount));
         }
 
@@ -61,16 +58,16 @@ namespace Decay.Tests
             BattleFlowResult result = fixture.Controller.RequestRoll();
 
             Assert.That(directPhaseRequest.IsRejected, Is.True);
-            Assert.That(directPhaseRequest.DenialReason, Is.EqualTo(PhaseChangeDenialReason.EnemySetupIncomplete));
+            Assert.That(directPhaseRequest.DenialReason, Is.EqualTo(PhaseChangeDenialReason.TransitionNotAllowed));
             Assert.That(result.IsRejected, Is.True);
-            Assert.That(result.DenialReason, Is.EqualTo(BattleFlowDenialReason.EnemySetupMustComplete));
-            Assert.That(fixture.State.CurrentPhase, Is.EqualTo(BattlePhase.Setup));
+            Assert.That(result.DenialReason, Is.EqualTo(BattleFlowDenialReason.WrongPhase));
+            Assert.That(fixture.State.CurrentPhase, Is.EqualTo(BattlePhase.EnemySetup));
             Assert.That(fixture.RandomSource.RemainingCount, Is.EqualTo(1));
             Assert.That(fixture.History.Count, Is.Zero);
         }
 
         [Test]
-        public void RequestRoll_TransitionsToRollingAndInvokesLogicalRollExactlyOnce()
+        public void RequestRoll_TransitionsFromPlayerSetupAndInvokesLogicalRollExactlyOnce()
         {
             var fixture = new BattleFlowFixture(scriptedRolls: new[] { 6 });
             fixture.PlaceDirect(fixture.PlayerA.InstanceId, new SlotId(Side.Player, 1));
@@ -122,7 +119,7 @@ namespace Decay.Tests
         }
 
         [Test]
-        public void SharedMovementAuthority_FollowsEnemySetupPlayerSetupEnemyRepositionPlayerReposition()
+        public void SharedMovementAuthority_FollowsExplicitEnemyPlayerSetupAndRepositionPhases()
         {
             var fixture = new BattleFlowFixture(scriptedRolls: new[] { 2, 3 });
             var movement = new MoveDiceController(
@@ -138,6 +135,7 @@ namespace Decay.Tests
             Assert.That(enemySetupMove.IsApproved, Is.True);
 
             Assert.That(fixture.Controller.CompleteEnemySetup().IsApproved, Is.True);
+            Assert.That(fixture.State.CurrentPhase, Is.EqualTo(BattlePhase.PlayerSetup));
 
             MoveDiceResult playerSetupMove = movement.RequestMove(new MoveDiceRequest(
                 Side.Player,
@@ -170,7 +168,7 @@ namespace Decay.Tests
         }
 
         [Test]
-        public void StartingNextRound_ResetsSetupAuthorityToEnemy()
+        public void StartingNextRound_ReturnsToEnemySetup()
         {
             var fixture = new BattleFlowFixture();
             Assert.That(fixture.Controller.CompleteEnemySetup().IsApproved, Is.True);
@@ -181,11 +179,10 @@ namespace Decay.Tests
 
             Assert.That(fixture.PhaseController.Handle(new PhaseChangeRequest(BattlePhase.ScoreProcess)).IsApproved, Is.True);
             Assert.That(fixture.PhaseController.Handle(new PhaseChangeRequest(BattlePhase.RoundEnd)).IsApproved, Is.True);
-            Assert.That(fixture.PhaseController.Handle(new PhaseChangeRequest(BattlePhase.Setup)).IsApproved, Is.True);
+            Assert.That(fixture.PhaseController.Handle(new PhaseChangeRequest(BattlePhase.EnemySetup)).IsApproved, Is.True);
 
             Assert.That(fixture.State.CurrentRoundNumber, Is.EqualTo(2));
-            Assert.That(fixture.State.CurrentPhase, Is.EqualTo(BattlePhase.Setup));
-            Assert.That(fixture.State.CurrentSetupTurn, Is.EqualTo(BattleSetupTurn.Enemy));
+            Assert.That(fixture.State.CurrentPhase, Is.EqualTo(BattlePhase.EnemySetup));
         }
 
         private sealed class BattleFlowFixture
