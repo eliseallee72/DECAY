@@ -1,3 +1,5 @@
+using System;
+
 namespace Decay
 {
     public enum MoveDiceDenialReason
@@ -19,11 +21,15 @@ namespace Decay
         DestinationDiceStateInvalid = 14,
 
         // Reserved for Gates whose authoritative owners are implemented later.
-        // Step 3 does not manufacture processing/tutorial/blocking state merely to use these.
+        // Do not manufacture processing/tutorial/blocking state merely to use these.
         ProcessingBlocksMovement = 15,
         TutorialRestriction = 16,
         BlockingOperationInProgress = 17,
 
-        ActingSideDoesNotMatchSetupTurn = 18
+        ActingSideDoesNotMatchSetupPhase = 18,
+
+        // Migration alias for tests/callers authored against the superseded Setup sub-turn pass.
+        [Obsolete("Use ActingSideDoesNotMatchSetupPhase.")]
+        ActingSideDoesNotMatchSetupTurn = ActingSideDoesNotMatchSetupPhase
     }
 }
