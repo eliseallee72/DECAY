@@ -7,7 +7,7 @@ namespace Decay
     /// Owns bounded round-flow orchestration across already-authoritative systems.
     ///
     /// Current first-pass sequence:
-    /// Enemy Setup -> Player Setup -> Rolling -> Enemy Reposition -> Player Reposition -> Decay Process.
+    /// EnemySetup -> PlayerSetup -> Rolling -> EnemyReposition -> PlayerReposition -> DecayProcess.
     ///
     /// This controller does not choose enemy moves, validate dice movement, resolve random faces, or
     /// calculate DECAY/SCORE results. Those responsibilities remain with their dedicated authorities.
@@ -33,45 +33,34 @@ namespace Decay
         }
 
         /// <summary>
-        /// Completes the enemy-controlled portion of Setup and hands Setup interaction authority to
-        /// the Player. Future EnemyController setup planning should submit its MoveDiceRequests first,
-        /// then call this completion boundary once its approved setup plan is finished.
+        /// Completes the enemy-controlled setup phase and hands setup interaction authority to PlayerSetup.
+        /// Future EnemyController setup planning should submit its MoveDiceRequests first, then call this
+        /// boundary once its approved setup plan is finished.
         /// </summary>
         public BattleFlowResult CompleteEnemySetup()
         {
-            BattleFlowResult commonRejection = RejectIfBattleCompleteOrWrongPhase(BattlePhase.Setup);
+            BattleFlowResult commonRejection = RejectIfBattleCompleteOrWrongPhase(BattlePhase.EnemySetup);
             if (commonRejection != null)
             {
                 return commonRejection;
             }
 
-            if (_battleState.CurrentSetupTurn != BattleSetupTurn.Enemy)
-            {
-                return BattleFlowResult.Rejected(BattleFlowDenialReason.EnemySetupAlreadyComplete);
-            }
-
             int firstFactIndex = _history.Count;
-            SetupTurnChangedFact fact = new CompleteEnemySetupCommand(_battleState).Execute();
-            _history.Record(fact);
+            RequireApprovedTransition(BattlePhase.PlayerSetup);
             return ApprovedFactsSince(firstFactIndex);
         }
 
         /// <summary>
-        /// Player Setup completion request. Enters Rolling and invokes the logical Roll exactly once.
+        /// Player setup completion request. Enters Rolling and invokes the logical Roll exactly once.
         /// The controller remains in Rolling until CompleteRoll is called so a future blocking roll
         /// presentation can finish without rule code guessing an animation duration.
         /// </summary>
         public BattleFlowResult RequestRoll()
         {
-            BattleFlowResult commonRejection = RejectIfBattleCompleteOrWrongPhase(BattlePhase.Setup);
+            BattleFlowResult commonRejection = RejectIfBattleCompleteOrWrongPhase(BattlePhase.PlayerSetup);
             if (commonRejection != null)
             {
                 return commonRejection;
-            }
-
-            if (_battleState.CurrentSetupTurn != BattleSetupTurn.Player)
-            {
-                return BattleFlowResult.Rejected(BattleFlowDenialReason.EnemySetupMustComplete);
             }
 
             int firstFactIndex = _history.Count;
