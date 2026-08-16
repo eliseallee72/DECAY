@@ -55,6 +55,13 @@ namespace Decay
 
         private PhaseChangeDenialReason GetProgressionDenial(BattlePhase currentPhase, BattlePhase requestedPhase)
         {
+            if (currentPhase == BattlePhase.Setup && requestedPhase == BattlePhase.Rolling)
+            {
+                return _battleState.CurrentSetupTurn != BattleSetupTurn.Player
+                    ? PhaseChangeDenialReason.EnemySetupIncomplete
+                    : PhaseChangeDenialReason.None;
+            }
+
             if (currentPhase == BattlePhase.RoundEnd)
             {
                 if (requestedPhase == BattlePhase.Setup && _gameEndCondition.IsGameEndRequired)
