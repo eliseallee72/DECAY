@@ -27,6 +27,7 @@ namespace Decay.Tests
             var board = new BoardState();
             var history = new BattleHistory();
             var controller = CreateController(state, board, history);
+            state.ApplyEnemySetupCompleted();
 
             PhaseChangeResult result = controller.Handle(new PhaseChangeRequest(BattlePhase.Rolling));
 
@@ -74,7 +75,7 @@ namespace Decay.Tests
             var history = new BattleHistory();
             var controller = CreateController(state, board, history);
 
-            AdvanceThroughRound(controller);
+            AdvanceThroughRound(controller, state);
             PhaseChangeResult result = controller.Handle(new PhaseChangeRequest(BattlePhase.Setup));
 
             Assert.That(result.IsApproved, Is.True);
@@ -117,7 +118,7 @@ namespace Decay.Tests
             var history = new BattleHistory();
             var controller = CreateController(state, board, history);
 
-            AdvanceThroughRound(controller);
+            AdvanceThroughRound(controller, state);
             PhaseChangeResult result = controller.Handle(new PhaseChangeRequest(BattlePhase.GameEnd));
 
             Assert.That(result.IsApproved, Is.False);
@@ -136,7 +137,7 @@ namespace Decay.Tests
             var history = new BattleHistory();
             var controller = CreateController(state, board, history);
 
-            AdvanceToScoreProcess(controller);
+            AdvanceToScoreProcess(controller, state);
             BreakAllSlots(state, board, Side.Player);
             Assert.That(controller.Handle(new PhaseChangeRequest(BattlePhase.RoundEnd)).IsApproved, Is.True);
 
@@ -160,7 +161,7 @@ namespace Decay.Tests
             var history = new BattleHistory();
             var controller = CreateController(state, board, history);
 
-            AdvanceToScoreProcess(controller);
+            AdvanceToScoreProcess(controller, state);
             BreakAllSlots(state, board, Side.Enemy);
             Assert.That(controller.Handle(new PhaseChangeRequest(BattlePhase.RoundEnd)).IsApproved, Is.True);
 
@@ -242,7 +243,7 @@ namespace Decay.Tests
         {
             while (true)
             {
-                AdvanceThroughRound(controller);
+                AdvanceThroughRound(controller, state);
                 if (state.CurrentRoundNumber >= state.RoundsPerGame)
                 {
                     return;
@@ -252,14 +253,18 @@ namespace Decay.Tests
             }
         }
 
-        private static void AdvanceThroughRound(BattlePhaseController controller)
+        private static void AdvanceThroughRound(BattlePhaseController controller, BattleState state)
         {
-            AdvanceToScoreProcess(controller);
+            AdvanceToScoreProcess(controller, state);
             Assert.That(controller.Handle(new PhaseChangeRequest(BattlePhase.RoundEnd)).IsApproved, Is.True);
         }
 
-        private static void AdvanceToScoreProcess(BattlePhaseController controller)
+        private static void AdvanceToScoreProcess(BattlePhaseController controller, BattleState state)
         {
+            Assert.That(state.CurrentPhase, Is.EqualTo(BattlePhase.Setup));
+            Assert.That(state.CurrentSetupTurn, Is.EqualTo(BattleSetupTurn.Enemy));
+            state.ApplyEnemySetupCompleted();
+
             Assert.That(controller.Handle(new PhaseChangeRequest(BattlePhase.Rolling)).IsApproved, Is.True);
             Assert.That(controller.Handle(new PhaseChangeRequest(BattlePhase.EnemyReposition)).IsApproved, Is.True);
             Assert.That(controller.Handle(new PhaseChangeRequest(BattlePhase.PlayerReposition)).IsApproved, Is.True);
