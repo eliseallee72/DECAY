@@ -32,7 +32,7 @@ namespace Decay
         {
             return context.Request.ActingSide == permittedSide
                 ? MoveDiceDenialReason.None
-                : MoveDiceDenialReason.ActingSideDoesNotMatchSetupTurn;
+                : MoveDiceDenialReason.ActingSideDoesNotMatchSetupPhase;
         }
 
         private static MoveDiceDenialReason EvaluateReposition(MoveDiceGateContext context, Side permittedSide)
