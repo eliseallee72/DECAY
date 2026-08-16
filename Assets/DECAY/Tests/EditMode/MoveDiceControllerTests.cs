@@ -165,6 +165,32 @@ namespace Decay.Tests
         }
 
         [Test]
+        public void Setup_EnemyTurnRejectsPlayerMovementUntilEnemySetupCompletes()
+        {
+            var fixture = new MovementFixture(setupTurn: BattleSetupTurn.Enemy);
+
+            MoveDiceResult result = fixture.Controller.RequestMove(new MoveDiceRequest(
+                Side.Player,
+                fixture.PlayerA.InstanceId,
+                MoveDiceTarget.Board(new SlotId(Side.Player, 1))));
+
+            AssertRejectedWithoutHistory(result, fixture, MoveDiceDenialReason.ActingSideDoesNotMatchSetupTurn);
+        }
+
+        [Test]
+        public void Setup_PlayerTurnRejectsFurtherEnemyMovement()
+        {
+            var fixture = new MovementFixture();
+
+            MoveDiceResult result = fixture.Controller.RequestMove(new MoveDiceRequest(
+                Side.Enemy,
+                fixture.EnemyA.InstanceId,
+                MoveDiceTarget.Board(new SlotId(Side.Enemy, 1))));
+
+            AssertRejectedWithoutHistory(result, fixture, MoveDiceDenialReason.ActingSideDoesNotMatchSetupTurn);
+        }
+
+        [Test]
         public void PlayerReposition_BoardToEmptyOwnSlot_IsApproved()
         {
             var fixture = new MovementFixture();
@@ -444,7 +470,7 @@ namespace Decay.Tests
         [Test]
         public void Setup_EnemyInventoryToOwnEmptySlot_IsApprovedThroughSameController()
         {
-            var fixture = new MovementFixture();
+            var fixture = new MovementFixture(setupTurn: BattleSetupTurn.Enemy);
             SlotId destination = new SlotId(Side.Enemy, 3);
 
             MoveDiceResult result = fixture.Controller.RequestMove(new MoveDiceRequest(
@@ -547,9 +573,22 @@ namespace Decay.Tests
 
         private sealed class MovementFixture
         {
-            internal MovementFixture(System.Collections.Generic.IEnumerable<IMoveDiceGate> additionalGates = null)
+            internal MovementFixture(
+                System.Collections.Generic.IEnumerable<IMoveDiceGate> additionalGates = null,
+                BattleSetupTurn setupTurn = BattleSetupTurn.Player)
             {
                 BattleState = DiceTestFactory.CreateBattleState();
+                if (setupTurn == BattleSetupTurn.Player)
+                {
+                    // Most Step 3 Setup tests exercise player interactions. Put those fixtures after
+                    // the new authoritative Enemy Setup handoff without recording unrelated history.
+                    BattleState.ApplyEnemySetupCompleted();
+                }
+                else if (setupTurn != BattleSetupTurn.Enemy)
+                {
+                    throw new System.ArgumentOutOfRangeException(nameof(setupTurn));
+                }
+
                 Board = new BoardState();
                 PlayerA = DiceTestFactory.CreatePlayerRuntimeDice(1, 101);
                 PlayerB = DiceTestFactory.CreatePlayerRuntimeDice(2, 102, "dice.player_second_d6");
