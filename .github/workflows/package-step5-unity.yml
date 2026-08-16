@@ -1,0 +1,64 @@
+name: Package Step 5 Unity Project
+
+on:
+  push:
+    branches:
+      - step-5
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout audited Step 5
+        uses: actions/checkout@v4
+
+      - name: Verify Unity project roots
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -d Assets
+          test -d Packages
+          test -d ProjectSettings
+          test -f Packages/manifest.json
+          test -f ProjectSettings/ProjectVersion.txt
+          grep -F "m_EditorVersion: 6000.5.8f1" ProjectSettings/ProjectVersion.txt
+
+      - name: Stage Unity-ready project
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT="package/DECAY_Step5_UnityReady"
+          mkdir -p "$ROOT"
+          cp -a Assets "$ROOT/Assets"
+          cp -a Packages "$ROOT/Packages"
+          cp -a ProjectSettings "$ROOT/ProjectSettings"
+          cp -a Docs "$ROOT/Docs"
+          cp "DECAY unity update.txt" "$ROOT/DECAY unity update.txt"
+          cat > "$ROOT/OPEN_IN_UNITY.txt" <<'EOF'
+          DECAY STEP 5 - UNITY READY PACKAGE
+
+          Unity version: 6000.5.8f1
+
+          1. Extract this ZIP.
+          2. Open Unity Hub.
+          3. Choose Add/Open project from disk.
+          4. Select the DECAY_Step5_UnityReady folder containing Assets, Packages, and ProjectSettings.
+          5. Let Unity import/compile the project.
+          6. Confirm there are no new red Console errors.
+          7. Run all Decay.Tests.EditMode tests. Expected audited Step 5 total: 168.
+
+          Library, Temp, Logs, obj, and other generated machine caches are intentionally omitted.
+          EOF
+
+      - name: Upload Unity-ready ZIP artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: DECAY_Step5_UnityReady
+          path: package/DECAY_Step5_UnityReady
+          if-no-files-found: error
+          include-hidden-files: true
+          compression-level: 6
