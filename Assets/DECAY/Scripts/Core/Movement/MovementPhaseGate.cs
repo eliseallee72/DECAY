@@ -1,3 +1,5 @@
+using System;
+
 namespace Decay
 {
     /// <summary>
@@ -27,9 +29,21 @@ namespace Decay
 
         private static MoveDiceDenialReason EvaluateSetup(MoveDiceGateContext context)
         {
-            Side permittedSide = context.BattleState.CurrentSetupTurn == BattleSetupTurn.Enemy
-                ? Side.Enemy
-                : Side.Player;
+            Side permittedSide;
+            switch (context.BattleState.CurrentSetupTurn)
+            {
+                case BattleSetupTurn.Enemy:
+                    permittedSide = Side.Enemy;
+                    break;
+
+                case BattleSetupTurn.Player:
+                    permittedSide = Side.Player;
+                    break;
+
+                default:
+                    throw new InvalidOperationException(
+                        $"Unsupported setup turn {context.BattleState.CurrentSetupTurn}.");
+            }
 
             return context.Request.ActingSide == permittedSide
                 ? MoveDiceDenialReason.None
