@@ -2,6 +2,11 @@ using System;
 
 namespace Decay
 {
+    /// <summary>
+    /// Internal phase-transition authority used by BattleController. It validates the explicit phase graph,
+    /// progression constraints, and records the completed PhaseChangedFact. Gameplay callers must request
+    /// phase/process progression through BattleController so blocking process boundaries cannot be bypassed.
+    /// </summary>
     public sealed class BattlePhaseController
     {
         private readonly BattleState _battleState;
@@ -21,7 +26,7 @@ namespace Decay
             _gameEndCondition = new GameEndCondition(_battleState, boardState ?? throw new ArgumentNullException(nameof(boardState)));
         }
 
-        public PhaseChangeResult Handle(PhaseChangeRequest request)
+        internal PhaseChangeResult Handle(PhaseChangeRequest request)
         {
             if (request == null)
             {
