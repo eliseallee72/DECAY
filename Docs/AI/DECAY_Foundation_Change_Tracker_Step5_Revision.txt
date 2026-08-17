@@ -1,0 +1,141 @@
+DECAY FOUNDATION CHANGE TRACKER - STEP 5 REVISION
+Last updated: 2026-08-16
+Baseline: step-4
+Supersedes: the earlier Step 5 first-pass sections 48-54 that modeled Enemy/Player Setup as BattleSetupTurn inside BattlePhase.Setup.
+
+PURPOSE
+This revision records the approved Step 5 architecture change while preserving the existing main tracker history. The next consolidation pass should merge this revision into DECAY_Foundation_Change_Tracker.txt and remove the superseded Step 5 wording.
+
+STEP 5 REVISED FIRST PASS - EXPLICIT ENEMY/PLAYER PHASES
+
+1. SETUP ORDER IS NOW PART OF AUTHORITATIVE BATTLE PHASE
+CHANGED:
+- BattlePhase now contains EnemySetup and PlayerSetup as separate authoritative phases.
+- The round flow is EnemySetup -> PlayerSetup -> Rolling -> EnemyReposition -> PlayerReposition -> DecayProcess.
+- BattleState starts every battle in EnemySetup.
+- RoundEnd -> EnemySetup starts the next round; GameEnd -> EnemySetup starts the next game.
+- The previous mutable BattleState.CurrentSetupTurn sub-state is removed as gameplay authority.
+
+SERIALIZATION / ENUM BASELINE:
+- The first compatibility pass preserved old numeric phase identities while the Setup-sub-turn migration was incomplete.
+- The final Step 5 v2 cleanup removes that compatibility constraint and re-baselines BattlePhase identities in the actual flow order: EnemySetup, PlayerSetup, Rolling, EnemyReposition, PlayerReposition, DecayProcess, ScoreProcess, RoundEnd, GameEnd, BattleEnd.
+- Explicit phase values exist only as stable Unity serialization identities; no rule code advances or compares phases by numeric arithmetic/order.
+- BattlePhase.Setup is fully removed.
+
+WHY:
+Elise explicitly approved making Enemy Setup, Player Setup, Enemy Reposition, and Player Reposition first-class orchestration stages for longevity and safety. This gives one authoritative answer to both phase and acting-side order instead of storing phase plus a second mutable setup-turn fact.
+
+2. MOVEMENT AUTHORITY FOLLOWS THE EXPLICIT PHASES
+CHANGED:
+- MovementPhaseGate permits Enemy inventory/board movement during EnemySetup only.
+- MovementPhaseGate permits Player inventory/board movement during PlayerSetup only.
+- EnemyReposition remains Enemy board-only movement.
+- PlayerReposition remains Player board-only movement.
+- All four stages continue through the same MoveDiceController Request -> Gate -> Command -> Fact route.
+
+PRESERVE:
+- Enemy logic receives no privileged BoardState mutation path.
+- BoardState remains occupancy authority; BattleInventoryState remains battle-inventory membership authority.
+- Reposition never permits board/inventory exchange.
+
+3. BATTLECONTROLLER OWNS BOUNDED ORCHESTRATION
+CHANGED:
+- BattleController.CompleteEnemySetup now requests EnemySetup -> PlayerSetup through BattlePhaseController and records the normal PhaseChangedFact.
+- RequestRoll requires PlayerSetup, transitions to Rolling, and invokes Step 4 RollExecutor exactly once.
+- CompleteRoll remains the explicit logical-result/presentation-completion seam before EnemyReposition.
+- CompleteEnemyReposition advances EnemyReposition -> PlayerReposition.
+- RequestDecay advances PlayerReposition -> DecayProcess.
+
+REMOVED:
+- CompleteEnemySetupCommand and SetupTurnChangedFact from the earlier sub-turn pass. Their authority is replaced by the normal BattlePhaseController + PhaseChangedFact path.
+
+4. PROCESSING / PRESENTATION BOUNDARY
+PRESERVE:
+- BattleController owns the bounded logical Roll completion state needed to prevent duplicate progression.
+- Do not add per-dice or view-owned IsProcessing flags.
+- Future blocking Roll presentation consumes completed Roll facts/state and calls CompleteRoll when presentation actually completes.
+- Presentation does not select faces, mutate roll results, or guess rule timing.
+
+5. INTENTIONAL STEP 5 STOP POINT
+- Step 5 stops after entering DecayProcess.
+- Enemy setup/reposition strategy, DecayResolver, saves, scoring, unstable cleanup, GameEnd repopulation, and runtime views remain separate future work.
+- Do not manufacture placeholder implementations merely to make the loop continue.
+
+6. TEST / VALIDATION EXPECTATION
+- Step 4 expected baseline remains 155 EditMode cases pending local Step 4 Unity validation.
+- The explicit-phase Step 5 revision and first architecture audit reached 168 expected EditMode cases.
+- The final phase cleanup plus Roll fallback/completion hardening add 6 further regression cases.
+- Current expected Step 5 total after import: 174 EditMode cases.
+- This environment cannot run Unity 6000.5.8f1; local compilation and all EditMode tests are still required before Step 5 is considered validated.
+
+7. MIGRATION COMPATIBILITY STATUS - CLOSED
+- The first compatibility pass temporarily kept BattleSetupTurn, CurrentSetupTurn, ApplyEnemySetupCompleted, BattlePhase.Setup, and setup-specific denial aliases so older fixtures could compile.
+- Section 10 records their approved removal after those fixtures were migrated.
+- Current Step 5 runtime code/tests contain no Setup-sub-turn compatibility API or competing actor-order state.
+
+8. STEP 5 ARCHITECTURE AUDIT - LONGEVITY / SAFETY HARDENING
+AUDIT BASIS:
+- DECAY unity update.txt architecture and coding rules.
+- DECAY Foundation Change Tracker and this Step 5 revision.
+- CardHouse as an architecture reference, especially Gate<T>, GateCollection<T>, CardGroup ownership/mounting, and EventChain presentation sequencing.
+- spire-codex as a reverse-engineering-derived architecture reference for a mature roguelike, especially typed powers/commands, stackability, enemy move state machines, event preconditions/choices, and data/runtime separation. It is evidence about exposed architecture, not source to copy.
+
+HARDENED IN THIS AUDIT:
+- BattlePhaseController.Handle is now internal to Decay.Runtime. External gameplay/view/AI assemblies cannot advance phases directly and bypass BattleController's bounded process-completion seams.
+- RollExecutor.ExecuteRoll is now internal to Decay.Runtime. External gameplay/view/AI assemblies cannot invoke the full-board Roll process directly and bypass BattleController.RequestRoll.
+- ArchitectureBoundaryTests use reflection to lock both visibility boundaries so future refactors fail tests if either low-level entry point becomes public again.
+- The audit first renamed the stale SetupTurn denial to SetupPhase; the final approved cleanup in Section 10 goes further and uses the single canonical ActingSideDoesNotMatchPhase denial for Setup and Reposition.
+
+WHY THIS MATTERS:
+DECAY unity update.txt requires Player input, enemy planning, tutorial logic, effects, and developer tools to use controlled Request/Gate/Command/Fact/process routes rather than bypassing orchestration. The Step 5 Roll completion seam only protects timing/order if lower-level phase and full-board Roll methods are not general public APIs.
+
+CARDHOUSE COMPARISON:
+- KEEP: narrow Gate objects answer permission questions; Gate collections compose them; group/container ownership centralizes membership changes; presentation can signal chain completion.
+- DECAY IMPROVEMENT: MoveDiceGateCollection is internal/read-only in use and returns typed denial reasons rather than only bool; BoardState/BattleInventoryState own gameplay membership instead of a presentation MonoBehaviour/public mutable list; BoardInventoryTransferExecutor prevalidates cross-owner transfers; gameplay RNG is injected rather than UnityEngine.Random; presentation completion does not become gameplay authority.
+- DO NOT COPY: CardHouse public mutable MountedCards, duplicated Card.Group membership, static/global presentation communication, or gameplay/presentation coupling. Those patterns are acceptable in a flexible framework demo but conflict with DECAY's stricter one-authority and deterministic requirements.
+
+SPIRE-CODEX COMPARISON:
+- The decompiled-model evidence exposes explicit typed card variables, powers, power stack types, typed PowerCmd.Apply<T> mutations, monster GenerateMoveStateMachine() behavior, event IsAllowed() preconditions, and structured choice/outcome data.
+- DECAY's current definition/runtime split, EffectId vs EffectInstanceId, EffectRuntimeStateCollection, Commands/Facts, and injected randomness are compatible with that mature-game pressure.
+- FUTURE RULE: do not collapse all effects into one generic mutation blob. Preserve source identity and effect-specific stack semantics; use reusable command/context infrastructure where behavior is truly shared.
+- FUTURE ENEMY RULE: EnemyController should plan bounded actions from authoritative state, potentially using explicit cycle/random/conditional strategy data, then submit ordinary MoveDiceRequests. It must not mutate BoardState directly.
+- FUTURE EVENT/TUTORIAL RULE: eligibility/preconditions should remain separate from outcomes, analogous to Gate/IsAllowed-style checks. Effects/events should produce approved Commands/Facts rather than silently mutating unrelated owners.
+
+9. AUDIT DEFERRED RISKS / NON-BLOCKERS
+- The audit originally identified that a scripted-source failure after entering Rolling could strand the phase. Section 11 now resolves the recoverable subset with full-plan fallback before commit plus a Roll completion prerequisite. Non-recoverable invariant/fallback failure still waits for the future process abort/restart policy rather than speculative rollback.
+- The temporary BattleSetupTurn compatibility surface identified here was removed in the final cleanup recorded in Section 10; no such runtime/test API remains.
+- Runtime view spawning, presentation failure handling, processing/blocking Gates, EnemyController strategy, Decay/Save resolution, Score, and GameEnd cleanup remain intentionally deferred rather than being faked in Step 5.
+
+
+10. STEP 5 FINAL PHASE-AUTHORITY CLEANUP (2026-08-16)
+APPROVED:
+- Removed BattleSetupTurn.cs and its meta.
+- Removed BattleState.CurrentSetupTurn and ApplyEnemySetupCompleted compatibility APIs.
+- Removed the obsolete BattlePhase.Setup alias.
+- Removed ActingSideDoesNotMatchSetupPhase and ActingSideDoesNotMatchSetupTurn.
+- EnemySetup, PlayerSetup, EnemyReposition, and PlayerReposition now use the single canonical ActingSideDoesNotMatchPhase denial when the acting Side does not own the current phase.
+- Movement fixtures now enter explicit EnemySetup or PlayerSetup phases rather than manufacturing a Setup sub-turn.
+- MoveDiceDenialReason, BattleFlowDenialReason, and PhaseChangeDenialReason no longer carry explicit numeric compatibility assignments; they are runtime typed results, not serialized identities.
+- BattlePhase numeric identities were re-baselined to the real phase sequence before Step 5 validation; no serialized DECAY asset currently stores a BattlePhase field, so the abandoned compatibility numbering is not preserved as debt.
+
+AUTHORITY RESULT:
+BattleState.CurrentPhase is the only phase/actor-stage authority. No Setup-turn compatibility state or API remains in runtime code/tests.
+
+11. ROLL RECOVERY + COMPLETION PREREQUISITE
+APPROVED POLICY:
+- A phase resolves its own recoverable execution failure when it can do so before commit.
+- Gates/prerequisites remain read-only; they detect incomplete state and refuse progression, but never repair or mutate gameplay.
+- Scripted/authored random-source exhaustion or out-of-range values now throw RecoverableRandomSourceException.
+- Runtime RollExecutor construction requires an explicit primary and fallback IRandomSource.
+- RollExecutor prepares the complete primary Roll plan before authoritative dice mutation. If the primary source reports a recoverable failure, the incomplete primary plan is discarded and the entire plan is resolved again from fallback before any dice are changed. Partial scripted and fallback values are never mixed within one Roll.
+- Invariant/programming/state-corruption exceptions do not trigger fallback. Randomness must never hide a broken BoardState/BattleInventoryState/dice invariant.
+- A successful commit produces an immutable RollExecutionResult receipt for the current game/round. It records which dice/slot/face resolutions were committed but does not become authority over current face values.
+- RollCompletionGate verifies the current execution receipt against DiceRuntimeState before CompleteRoll can advance to EnemyReposition. A stale face from a previous round cannot satisfy completion without a current Roll receipt.
+- Empty-board Roll remains valid: a successful zero-participant execution receipt can complete.
+
+DEFERRED BY DESIGN:
+- If a non-recoverable invariant failure or the fallback source itself fails, Step 5 does not perform speculative rollback. The battle remains in an invalid/failing process that future battle/process abort/restart semantics must handle explicitly.
+- Presentation completion/cancellation after logical commit remains a later process/presentation concern. Once committed, presentation failure must reconcile to authoritative state rather than undo the Roll.
+
+VALIDATION TARGET:
+Expected Step 5 EditMode cases after these additions: 174. Unity Editor validation remains required.
