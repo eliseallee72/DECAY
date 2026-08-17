@@ -1,0 +1,1111 @@
+DECAY UNITY FOUNDATION CHANGE TRACKER
+Last updated: 2026-08-16
+
+PURPOSE
+This file travels with the Unity rebuild and records architecture changes that remove or supersede earlier foundation behavior, plus integration rules future steps must preserve. Update it when a later step changes an earlier public type, ownership rule, test assumption, or migration requirement.
+
+STEP 1 REVISION - CHANGES MADE
+
+1. DICE LOCATION AUTHORITY REMOVED FROM DiceRuntimeState
+REMOVED:
+- DiceLocation and DiceLocationKind.
+- DiceRuntimeState.Location.
+- MoveToBoard, MoveToBattleInventory, and MarkPending.
+
+REPLACEMENT / FUTURE OWNER:
+- BoardState will own board slot occupancy.
+- BattleInventoryState will own battle-inventory membership.
+- DiceRuntimeState retains only dice-local battle facts such as IsDecayedForCurrentGame.
+- Interaction availability is determined by Gates from authoritative state; do not recreate an Unavailable location enum.
+
+TESTS CHANGED:
+- Tests that required DiceRuntimeState to reject opposing-side movement were removed because movement validation belongs to the future Board request/gate/controller path.
+- Tests no longer assert that DECAYED is a DiceLocationKind.
+
+2. SLOT IDENTITY AND OPPOSING PAIRS CHANGED
+CHANGED:
+- SlotId.Index -> SlotId.Number (public logical numbers remain 1 through 6).
+- Serialized backing field _index -> _number with FormerlySerializedAs for safety.
+- SlotId no longer implements IComparable and no longer supplies a generic gameplay ordering.
+- FirstSlotIndex / LastSlotIndex -> FirstSlotNumber / LastSlotNumber.
+
+ADDED:
+- SlotPairId explicitly represents the opposing Enemy + Player slots with the same Number.
+- SlotIndexConverter is the single one-based Slot Number <-> zero-based storage-index conversion path.
+
+FUTURE RULE:
+- DecayResolver must iterate numbered SlotPairId values from 1 through 6 and resolve both sides of each numbered pair as one resolution step.
+- Do not implement Decay as independently ordered 1E -> 1P -> 2E -> 2P operations.
+- Do not assume the Decay ordering automatically applies to every future dice effect. A process owns its own ordering rule.
+
+3. ROLL VALUE IS NOW A HARD 1-6 INVARIANT
+ADDED / CHANGED:
+- BattleRules.MinimumRollValue = 1 and MaximumRollValue = 6.
+- RollValueRules centralizes validation.
+- DiceFaceDefinition uses Inspector Range(1,6) and rejects invalid authored values.
+- DiceFaceSeed rejects invalid values.
+- DiceRuntimeSeed validates face roll values.
+- DiceFaceRuntimeState.SetRollValue rejects values outside 1-6.
+
+FUTURE RULE:
+- Effects may mutate ROLL VALUE only to another value from 1 through 6.
+- Values above/below this range belong in SCORE VALUE or another explicitly designed value, never ROLL VALUE.
+
+4. EFFECT RUNTIME IDENTITY CHANGED
+CHANGED:
+- IEffectRuntimeState now exposes both EffectInstanceId InstanceId and EffectId EffectId.
+- Shared EffectRuntimeStateCollection keys runtime effect-state storage by EffectInstanceId, not EffectId; DiceRuntimeState uses this shared implementation and future charm/battle owners may reuse it.
+- Multiple runtime occurrences with the same EffectId are explicitly allowed.
+- Duplicate EffectInstanceId on one dice is rejected.
+
+WHY:
+Existing planned dice/charms contain repeated triggers, persistent bonuses, and effects that can be supplied by multiple sources. EffectId identifies authored behavior; it cannot safely identify one runtime occurrence.
+
+FUTURE RULE:
+- The effect executor/factory must assign battle-runtime unique EffectInstanceId values for stateful runtime occurrences. EffectInstanceId is not permanent content/save identity.
+- Reuse EffectRuntimeStateCollection rather than creating parallel registration rules for dice, charms, or other effect owners.
+- Concrete effect context/state must preserve whatever source information that effect needs (dice, face, charm, trigger, target, etc.).
+- Do not merge runtime states only because EffectId matches.
+- Exact stacking/source semantics remain effect-specific and should be approved when each effect family is implemented.
+
+5. CONTENT IDS NOW ENFORCE STABLE CATEGORY FORMAT
+CHANGED:
+- DiceId requires dice.name.
+- EffectId requires effect.name.
+- DiceTagId requires tag.name.
+- Names are lowercase; the name portion uses lowercase letters, numbers, and underscores.
+- Constructor input is trimmed; serialized invalid forms fail IsValid/TryValidate.
+- Previous test IDs such as neutral-d6 and starter were replaced by dice.neutral_d6 and tag.starter.
+
+FILE ORGANIZATION:
+- Former ContentIds.cs was split so DiceId, OwnedDiceId, EffectId, DiceTagId, and ContentIdValidator each have a focused file.
+
+6. DEFINITION GRAPH VALIDATION STRENGTHENED
+CHANGED:
+- DiceDefinition and DiceFaceDefinition now call EffectDefinition.TryValidate instead of checking only for a non-empty EffectId.
+- DiceRuntimeSeed also recursively validates referenced effect definitions.
+- Duplicate authored EffectId references remain rejected within one dice-level list or one face-level list; this does NOT prevent multiple runtime occurrences.
+
+7. BATTLE PHASE PROGRESSION CHANGED
+ADDED:
+- BattlePhaseTransitionValidator.
+
+CHANGED:
+- Tests no longer use numeric enum comparisons to prove process order.
+- BattlePhase numeric values are serialization identities only.
+
+FUTURE RULE:
+- BattlePhaseController must ask BattlePhaseTransitionValidator before authoritative phase changes.
+- Never use CurrentPhase++, enum arithmetic, or numeric ordering as battle-flow authority.
+- Current explicit branches include RoundEnd -> Setup/GameEnd and GameEnd -> Setup/BattleEnd.
+
+8. BATTLE HISTORY FOUNDATION ADDED
+ADDED:
+- BattleFact base with one-time assigned SequenceNumber.
+- BattleHistory records facts in resolved order and assigns monotonic sequence numbers.
+
+FUTURE RULE:
+- Add concrete Facts only as their systems are implemented (DiceRolledFact, DiceMovedFact, SaveCreatedFact, etc.).
+- Each concrete Fact must contain the stable identities and battle/game/round/side/slot/source/target/value context needed to understand that fact.
+- BattleHistory records completed results; it never becomes current gameplay authority.
+
+9. CONFIGURATION DEFAULT SOURCE CLEANUP
+CHANGED:
+- Removed BattleRules.DefaultGamesPerBattle, DefaultRoundsPerGame, and DefaultBattleInventoryCapacity.
+- BattleConfig remains the editor-authored configured source for games/rounds/capacity; its field initializers are creation defaults, not a second runtime rule source.
+- Default asset names now move toward the documented prefixes (for example conf_BATTLE_New, def_DICE_New, catalog_DICE).
+
+10. RUNTIME SEED FILE / PERSISTENCE BOUNDARY
+CHANGED:
+- DiceFaceSeed moved into its own file.
+- DiceRuntimeSeed is explicitly documented as runtime construction data.
+
+FUTURE RULE:
+- Do not serialize DiceRuntimeSeed as save data because it contains EffectDefinition Unity object references.
+- Save data must use stable IDs and explicit serializable values, then resolve definitions through catalogs/repositories when loading.
+
+11. TESTS THAT WERE INTENTIONALLY REWRITTEN
+REMOVED/SUPERSEDED TEST ASSUMPTIONS:
+- DiceRuntimeState owns board location.
+- DECAYED maps to DiceLocationKind.Unavailable.
+- DiceRuntimeState itself validates board-side movement.
+- SlotId.Index is the public slot identity.
+- BattlePhase ordinal values define legal transition order.
+- Content IDs may be arbitrary strings such as neutral-d6.
+
+ADDED TEST COVERAGE:
+- SlotPairId opposing-pair identity.
+- Shared slot storage-index conversion.
+- Default SlotId invalidity.
+- Explicit BattlePhaseTransitionValidator paths and rejected skips.
+- Authored, seeded, and runtime ROLL VALUE 1-6 enforcement.
+- Multiple runtime occurrences of one EffectId with distinct EffectInstanceId values.
+- Duplicate effect-instance rejection.
+- Recursive EffectDefinition validation.
+- BattleHistory monotonic sequence assignment and one-time recording.
+
+OPEN / DEFERRED DECISIONS TO KEEP VISIBLE
+A. GAMEMAKER OWNED DICE ID 0
+The GameMaker reference may contain permanent dice IDs beginning at 0, while Unity OwnedDiceId currently requires positive values (>0). Before save migration/import is implemented, explicitly decide whether legacy ID 0 must be supported or remapped. Do not silently change persistent identity.
+
+B. EFFECT SOURCE AND STACKING SEMANTICS
+EffectInstanceId now allows repeated runtime occurrences, but concrete source/stacking rules are intentionally NOT generalized yet. Resolve them by effect family when implementing effects; preserve source identity when needed.
+
+C. PROCESS-SPECIFIC ORDERING
+Decay pair ordering is confirmed: numbered opposing pairs 1 through 6, both sides in each pair as one resolution step. Scoring/effect ordering may require more specific rules later. Do not manufacture one universal ordering abstraction.
+
+D. UNITY VALIDATION
+This revision was produced without a connected Unity Editor. Static code/reference validation can be done here, but Unity 6000.5.8f1 compilation and EditMode Test Runner results must be checked locally after import.
+
+
+STEP 2 FIRST PASS - AUTHORITATIVE BATTLE / BOARD / INVENTORY STATE
+Last updated: 2026-08-15
+Baseline: GitHub branch step-1 (validated locally by Elise before this pass)
+
+12. BATTLESTATE NOW OWNS CURRENT PHASE / GAME / ROUND
+ADDED:
+- BattleState snapshots the configured GamesPerBattle and RoundsPerGame and owns CurrentGameNumber, CurrentRoundNumber, and CurrentPhase.
+- BattlePhaseController accepts PhaseChangeRequest, checks BattlePhaseTransitionValidator plus GameEndCondition/configured game limits, executes an approved AdvancePhaseCommand, and records PhaseChangedFact in BattleHistory.
+- RoundEnd -> Setup increments the round only when another configured round exists AND neither side is fully Broken.
+- RoundEnd -> GameEnd is approved only when GameEndCondition is met: the configured round cap has been reached OR every Player slot is Broken OR every Enemy slot is Broken.
+- GameEnd -> Setup increments the game and resets the round number to 1 only when another configured game remains.
+- GameEnd -> BattleEnd is permitted only after the configured final game.
+
+PRESERVE:
+- Battle phase transitions never use enum arithmetic or CurrentPhase++.
+- BattlePhaseTransitionValidator remains the structural transition authority. BattlePhaseController adds progression/configuration constraints around it.
+- Presentation (hourglass, hand, animations) must observe these completed changes; it must not set BattleState directly.
+
+DEFERRED:
+- Phase transition currently changes battle counters/state only. Round cleanup, GameEnd board reset, DECAYED dice repopulation, score transfer/reset, and presentation sequencing require their own explicit lifecycle/process orchestration and MUST NOT be silently hidden inside BattleState.
+
+13. BATTLE FACT CONTEXT ADDED
+ADDED:
+- BattleFactContext snapshots GameNumber, RoundNumber, and BattlePhase for historical Facts.
+- BattleState exposes CurrentFactContext as a snapshot; BattleState itself remains current authority.
+- PhaseChangedFact stores both PreviousContext and CurrentContext so GameEnd -> Setup and RoundEnd -> Setup are historically unambiguous.
+- Board/inventory/slot Facts store the context in which their completed change occurred.
+
+PRESERVE:
+- BattleHistory is historical only. Never reconstruct current phase, location, slot condition, or dice state by replaying/searching history during normal gameplay.
+- Non-phase Commands receive BattleState and snapshot BattleState.CurrentFactContext at Execute time. Callers do not supply arbitrary BattleFactContext values.
+
+14. BOARDSTATE / SLOTSTATE NOW OWN BOARD OCCUPANCY
+ADDED:
+- BoardState creates exactly 12 authoritative SlotState objects: 1E..6E and 1P..6P.
+- SlotState owns SlotCondition and the optional occupying DiceInstanceId for its SlotId.
+- BoardState is the authoritative answer for whether a dice is on the board and which slot contains it.
+- BoardState does not maintain a second reverse-location cache; TryGetSlotOfDice derives the answer from authoritative slot occupancy to prevent competing copies.
+- BoardState reports broken-slot counts / all-slots-broken per Side.
+
+INVARIANTS:
+- A DiceInstanceId may not occupy two board slots.
+- Placement requires an empty Unbroken slot.
+- Board movement and board-board swaps cannot cross Side.
+- Board movement requires both the source and destination slots to be Unbroken.
+- A slot cannot become Broken while it still contains a dice. Decay/cleanup must remove or return the dice first, then break the slot.
+- SetSlotConditionCommand rejects a no-op condition assignment because a Fact must represent a completed state change.
+
+DEFERRED:
+- SlotCondition transitions beyond these structural invariants remain process-specific. Do not invent one universal Unbroken/Unstable/Broken transition graph before Decay/Score cleanup is implemented.
+- The rule "an unbroken slot opposing a broken slot becomes unstable" belongs to the appropriate resolver/cleanup process; BoardState does not auto-derive it from presentation or polling.
+
+15. BATTLEINVENTORYSTATE NOW OWNS BATTLE INVENTORY MEMBERSHIP
+ADDED:
+- BattleInventoryState tracks all DiceRuntimeState objects selected for the battle and separately owns which tracked dice are currently members of each Side's Battle Inventory.
+- Capacity is enforced per Side across the full selected battle roster, including dice currently on the board or DECAYED for the game. This matches the rule that a side can use at most the configured battle-inventory count for that battle.
+- A tracked dice can remain in BattleInventoryState while not being a current inventory member (for example while on the board or later while DECAYED).
+- DECAYED dice are rejected by BattleInventoryState itself as current inventory members; this is an owner-level invariant, not merely a placement Gate.
+- Player battle roster construction rejects duplicate SourceOwnedDiceId values so one permanently owned dice cannot appear as two runtime player dice in the same battle.
+- InventoryDiceIds returns a read-only view; outside code cannot mutate membership by downcasting the exposed collection.
+
+PRESERVE:
+- Removing a dice from inventory membership does not delete/reset its DiceRuntimeState.
+- Returning an unstable/surviving dice to inventory preserves battle-local score/effect/face changes unless a specific rule says to reset them.
+- DECAYED is not an inventory location enum. A DECAYED dice remains tracked and is unavailable for the rest of that game; future Decay/GameEnd orchestration controls when it is absent/repopulated.
+
+DEFERRED:
+- Concrete DECAY removal/repopulation commands are intentionally not implemented in this pass; they belong with DecayResolver and GameEnd cleanup so their reset semantics are applied in the correct order.
+
+16. GLOBALINVENTORYSTATE ADDED AS PERMANENT IN-MEMORY SOURCE
+ADDED:
+- GlobalDiceState pairs permanent OwnedDiceId with the immutable runtime-construction seed used to create battle copies.
+- GlobalInventoryState resolves GlobalDiceState by OwnedDiceId and exposes ordered owned IDs through a read-only view.
+- A battle DiceRuntimeState created from Global Inventory is an independent runtime copy; battle mutation does not modify Global Inventory data.
+- DiceRuntimeSeed and DiceFaceSeed collection views were hardened to ReadOnlyCollection so Global Inventory cannot be mutated by casting their IReadOnlyList properties back to List.
+
+PRESERVE:
+- DiceRuntimeSeed remains runtime construction data, NOT SaveData. It may reference EffectDefinition Unity objects.
+- Persistent saves must store stable IDs and serializable values and resolve definitions when loading.
+
+DEFERRED:
+- Permanent acquisition/removal/upgrades, saving/loading, and commit-back rules are not implemented yet.
+- GameEnd repopulation of DECAYED player dice must create/reset battle state from Global Inventory at the correct process boundary.
+- GameMaker OwnedDiceId 0 migration remains unresolved (see open decision A).
+
+17. APPROVED BOARD / INVENTORY COMMAND PRIMITIVES ADDED
+ADDED:
+- PlaceDiceOnBoardCommand: Battle Inventory -> empty Unbroken own-side slot.
+- ReturnDiceToInventoryCommand: board -> own-side Battle Inventory without resetting the dice.
+- MoveDiceOnBoardCommand: occupied Unbroken slot -> empty Unbroken slot on same Side.
+- SwapBoardDiceCommand: two occupied Unbroken slots exchange dice on same Side.
+- SwapBoardWithInventoryCommand: atomic Setup-style exchange between one occupied board slot and one same-side Battle Inventory dice.
+- SetSlotConditionCommand: approved structural slot-condition change.
+- Commands are one-shot and return concrete Facts describing completed changes.
+- Board/inventory membership transfer is centralized in BoardInventoryTransferExecutor. It validates both authoritative owners before mutation, then performs the synchronous transfer in one shared path instead of duplicating removal/insertion/rollback code across Commands.
+- ReturnDiceToInventoryCommand supports Unstable-slot ejection: the same DiceRuntimeState returns to Battle Inventory without reset and retains battle-local score/effect/face changes. DECAYED dice are rejected from this path.
+
+IMPORTANT BOUNDARY:
+- These Commands are approved-operation primitives, NOT permission APIs for views/input.
+- Player/AI/tutorial code must not construct gameplay meaning from transforms and must not bypass future Requests/Gates to call state mutation directly.
+- Defensive invariant checks in Commands/State protect data consistency; future Gates own user-facing permission/denial logic.
+
+18. SETUP SWAP AND REPOSITION ARE KEPT DISTINCT
+CONFIRMED IN FOUNDATION:
+- Setup needs the ability to exchange a board dice with a Battle Inventory dice; SwapBoardWithInventoryCommand provides the atomic state operation.
+- Reposition is board-only. MoveDiceOnBoardCommand / SwapBoardDiceCommand never put dice into Battle Inventory.
+
+DEFERRED:
+- Phase-specific permission is NOT hardcoded into these Commands. Step 3 should route movement through MoveDiceRequest + narrow Gates so Setup and PlayerReposition can approve different destination/movement operations from authoritative BattleState/BoardState/BattleInventoryState.
+
+19. REQUEST/GATE MOVEMENT FLOW INTENTIONALLY DEFERRED TO NEXT PASS
+NOT YET IMPLEMENTED:
+- MoveDiceRequest / movement intent variants.
+- PhaseGate, ownership/control Gate, source-membership Gate, destination Gate, processing Gate, tutorial restriction Gate, and blocking-operation Gate.
+- Player drag/click adapters and enemy movement adapters.
+- Presentation movement/animation completion.
+
+REASON:
+Step 2 establishes authoritative state and atomic Commands first. This prevents the input/view layer from becoming a competing owner while the permission model is still being implemented.
+
+20. STEP 2 FACTS ADDED
+ADDED:
+- PhaseChangedFact.
+- DicePlacedOnBoardFact.
+- DiceReturnedToInventoryFact.
+- DiceMovedOnBoardFact.
+- BoardDiceSwappedFact.
+- BoardInventoryDiceSwappedFact.
+- SlotConditionChangedFact.
+
+PRESERVE:
+- These Facts describe completed changes and include stable dice/slot/side identities plus BattleFactContext as relevant.
+- Only record a Fact after its state mutation succeeds.
+- A rejected request or failed/no-op Command must not produce a Fact.
+
+21. STEP 2 TEST COVERAGE ADDED
+ADDED TEST AREAS:
+- BattleState initial game/round/phase.
+- PhaseChangeRequest acceptance/rejection, configured round/game boundaries, state-required early GameEnd, premature GameEnd rejection, final BattleEnd, and BattleHistory recording.
+- 12-slot BoardState construction, occupancy authority, same-side movement, swaps, broken-slot restrictions, and all-slots-broken queries.
+- Atomic board <-> Battle Inventory placement, return, and Setup-style swap behavior.
+- Global Inventory permanent identity and separation from battle-local runtime mutation.
+- Battle Inventory side separation, membership, capacity, and tracked-vs-current-inventory distinction.
+- DECAYED dice remains tracked but cannot be placed again in the current game.
+- Commands execute only once and no-op SlotCondition change is rejected.
+
+22. STEP 2 VALIDATION STATUS
+THIS PACKAGE:
+- Was built from the locally extracted Step 1 package whose core files were checked byte-for-byte against GitHub branch step-1 before editing.
+- Has static checks for forbidden scene-search communication, UnityEngine.Random, gameplay Update polling, phase arithmetic, obsolete DiceLocation APIs, manual slot-index conversion, file/type naming, and Unity .meta GUID uniqueness.
+
+STILL REQUIRED LOCALLY:
+- Open in Unity 6000.5.8f1 and allow compilation/import.
+- Confirm zero new red Console errors.
+- Run all Decay.Tests.EditMode tests; all existing Step 1 tests plus BattleStateTests, BoardStateTests, and InventoryStateTests must pass before Step 2 is treated as validated.
+
+OPEN / DEFERRED DECISIONS AFTER STEP 2 SECOND PASS
+E. MOVEMENT REQUEST / GATE SHAPE
+Next pass should establish the single permission path for Setup placement/swap/removal versus board-only Reposition. Do not let individual views implement these rules themselves.
+
+F. DECAY / GAME-END MEMBERSHIP ORCHESTRATION
+DecayResolver must atomically remove DECAYED dice from BoardState, mark the dice DECAYED for the game, break the appropriate slot, and leave it tracked but out of current inventory membership. GameEnd cleanup must repopulate/reset it from Global Inventory in the documented order. Exact commands/Facts should be implemented with that resolver, not guessed in generic inventory state.
+
+G. SLOT CONDITION PROCESS TRANSITIONS
+Structural invariants exist, but process-specific legal transitions and the opposing-broken -> unstable rule should be implemented when Decay/Score cleanup is built.
+
+H. GLOBAL INVENTORY PERSISTENCE / PERMANENT MUTATION
+Acquisition, permanent upgrades, removal, save records, and commit-back semantics remain intentionally unimplemented. Do not use DiceRuntimeSeed directly as disk SaveData.
+
+STEP 2 SECOND PASS - UNITY DOC + CARDHOUSE + SPIRE-CODEX ARCHITECTURE AUDIT
+Last updated: 2026-08-15
+Source package: DECAY_Step2_First_Pass(2).zip
+
+23. GAME-END CONDITION IS NOW STATE-DRIVEN
+CHANGED:
+- Added GameEndCondition, which reads BattleState and BoardState without becoming an owner of either.
+- A game must end after scoring when ANY of these is true:
+  1. CurrentRoundNumber has reached RoundsPerGame.
+  2. all Player slots are Broken.
+  3. all Enemy slots are Broken.
+- RoundEnd -> Setup is denied when GameEndCondition is met.
+- RoundEnd -> GameEnd is denied when GameEndCondition is NOT met.
+- BattlePhaseTransitionValidator still owns structural phase edges; GameEndCondition supplies gameplay-state permission for the RoundEnd branch.
+
+WHY:
+The caller must not choose whether a game ended when authoritative BattleState/BoardState can answer that question.
+
+24. DECAYED DICE ARE EXCLUDED FROM CURRENT BATTLE INVENTORY BY THE OWNER
+CHANGED:
+- BattleInventoryState.ReturnToInventory rejects IsDecayedForCurrentGame.
+- BattleInventoryState construction rejects a DECAYED dice as an initial current inventory member.
+- DECAYED dice may remain tracked by BattleInventoryState while outside current inventory membership.
+
+CONFIRMED RULE:
+- DECAYED dice do not return to current Battle Inventory during the game.
+- They are repopulated/reset when a new game begins from the appropriate authoritative source. For player-owned dice this source is GlobalInventoryState.
+- The complete GameEnd/new-game repopulation process remains an explicit lifecycle operation to implement with the relevant resolver/cleanup layer; do not hide it inside ReturnToInventory or BattleState.
+- Do not wire GameEnd -> Setup as a complete player-facing new-game transition until that lifecycle operation also resets per-game board/inventory state in the documented order.
+
+25. UNSTABLE-SLOT EJECTION PRESERVES BATTLE RUNTIME STATE
+CONFIRMED:
+- A dice ejected when an Unstable slot breaks is NOT DECAYED.
+- It returns to Battle Inventory as the same DiceRuntimeState.
+- Its battle-local score/effect/face mutations are preserved.
+- The slot can then transition from Unstable to Broken after the dice has been removed.
+- Tests cover this exact path.
+
+26. PLAYER PERMANENT IDENTITY CANNOT BE DUPLICATED IN ONE BATTLE
+CHANGED:
+- BattleInventoryState rejects two Player DiceRuntimeState objects with the same SourceOwnedDiceId even when their DiceInstanceId values differ.
+- DiceInstanceId remains battle-runtime identity; SourceOwnedDiceId remains permanent player-owned identity.
+
+WHY:
+One permanently owned player dice must not accidentally enter a battle more than once through duplicate runtime instances.
+
+27. CROSS-OWNER BOARD/INVENTORY TRANSFERS ARE CENTRALIZED
+ADDED:
+- BoardInventoryTransferExecutor is an internal coordination layer shared by:
+  - PlaceDiceOnBoardCommand
+  - ReturnDiceToInventoryCommand
+  - SwapBoardWithInventoryCommand
+
+BOUNDARY:
+- The executor does NOT own dice location and stores no parallel location state.
+- BoardState remains authoritative for board occupancy.
+- BattleInventoryState remains authoritative for current Battle Inventory membership.
+- The executor validates both owners before the first mutation and then performs the synchronous transfer.
+- Board-only MoveDiceOnBoardCommand and SwapBoardDiceCommand remain BoardState operations and do not go through this executor.
+
+REFERENCE RATIONALE:
+- CardHouse CardGroup demonstrates the useful principle that membership transfer should have one central path instead of each caller independently reproducing remove/add behavior.
+- DECAY intentionally does NOT copy CardHouse's duplicated Card.Group/MountedCards authority, public mutable lists, singleton communication, or presentation-coupled membership behavior.
+
+28. FACT CONTEXT NOW COMES FROM AUTHORITATIVE BATTLESTATE AT EXECUTION
+CHANGED:
+- Board/inventory/slot Commands no longer accept caller-created BattleFactContext.
+- They receive BattleState and snapshot CurrentFactContext when Execute begins.
+- Tests prove a Command created in one phase records the phase that is authoritative when the Command actually executes.
+
+WHY:
+Historical Facts cannot claim an incorrect game/round/phase because a caller supplied a stale or fabricated context.
+
+FUTURE:
+If Facts later need WHY an operation happened (player drag, enemy plan, tutorial force, Unstable cleanup, effect, etc.), add a separate typed source/reason concept. Do not overload BattleFactContext with causality.
+
+29. INVENTORY ORDER IS NON-AUTHORITATIVE
+CONFIRMED / DEFERRED:
+- ReturnToInventory currently appends to the side's inventory list.
+- This is acceptable for now and may change after drawer/carousel playtesting.
+- Gameplay rules MUST NOT depend on Battle Inventory list order unless an explicit future rule says otherwise.
+- Presentation/layout may choose a different visual order without changing membership authority.
+
+REFERENCE RATIONALE:
+CardHouse usefully separates group membership from CardGroupSettings layout/arrangement. DECAY should preserve the same conceptual separation while using its own cleaner state model.
+
+30. SPIRE-CODEX REFERENCE INTERPRETATION PRESERVED
+REFERENCE NOTE:
+- spire-codex is a reverse-engineered/decompiled structural reference. Its README documents extraction of the game's C#/.NET DLL into readable model files and parsing of model/state/command patterns.
+- It is NOT treated as the original development repository or as code to copy.
+
+USEFUL PATTERNS RETAINED FOR DECAY:
+- authored/model identity separate from runtime dynamic values.
+- explicit state-machine/process structure.
+- command-shaped gameplay actions with typed source/target/value context.
+- explicit stack/runtime state distinctions for effect-like systems.
+
+DECAY-SPECIFIC RESULT:
+- Keep DiceDefinition / GlobalInventoryState / DiceRuntimeState separated.
+- Keep EffectId / EffectInstanceId separated.
+- Keep explicit BattleState/BoardState/BattleInventoryState authority.
+- Borrow clarity of commands/context/state machines without reproducing Spire implementation details one-to-one.
+
+31. DOCUMENT AUTHORITY / TRACKER POLICY FOR THIS MILESTONE
+CONFIRMED BY ELISE:
+- Do NOT continually expand DECAY unity update.txt with each incremental Step 2 architecture refinement.
+- DECAY_Foundation_Change_Tracker.txt is the step-by-step migration updater until a more substantial documentation milestone.
+- The authoritative Unity update document remains intentionally unchanged by this revision.
+
+32. STEP 2 SECOND-PASS TESTS ADDED / REVISED
+ADDED OR STRENGTHENED:
+- premature RoundEnd -> GameEnd rejection.
+- fully Broken Player side requires GameEnd.
+- fully Broken Enemy side requires GameEnd.
+- RoundEnd -> Setup denial when board-break GameEnd is required.
+- duplicate player SourceOwnedDiceId rejection.
+- DECAYED dice rejection as initial/current inventory membership.
+- Unstable-slot return preserves the same mutated DiceRuntimeState.
+- DECAYED board dice cannot use the normal return-to-inventory path.
+- Fact context is captured from authoritative BattleState at Execute time.
+
+STILL DEFERRED:
+- DecayResolver's complete DECAY removal sequence.
+- ScoreResolver and Unstable cleanup orchestration.
+- GameEnd/new-game board reset and DECAYED repopulation orchestration.
+- Enemy new-game dice reset source/plan.
+- movement Request/Gate layer and presentation.
+
+STEP 3 FIRST PASS - MOVEMENT REQUEST / GATE PERMISSION PATH
+Last updated: 2026-08-16
+Baseline: GitHub branch step2, tree 1e8fa9180fa6c9812f4b3cf7cb62b7a6f62b0b90. Elise validated the Step 2 baseline locally with 102/102 EditMode tests green and successful Play Mode startup before this pass.
+
+33. MOVEDICE REQUESTS DO NOT CARRY AUTHORITATIVE SOURCE LOCATION
+ADDED:
+- MoveDiceRequest identifies the ActingSide, DiceInstanceId, and requested MoveDiceTarget only.
+- MoveDiceTarget is either one Board SlotId or Battle Inventory.
+- The request does NOT state whether the dice currently comes from BoardState or BattleInventoryState.
+- MoveDiceGateContext resolves the current source from authoritative BoardState/BattleInventoryState at request-evaluation time.
+
+WHY:
+A view, AI planner, tutorial, or developer tool may ask for a move, but it must not be able to manufacture stale/false source state. This preserves the Request -> Gate -> Command boundary in DECAY unity update.txt and avoids recreating DiceRuntimeState.Location.
+
+34. ONE MOVEMENT CONTROLLER NOW OWNS THE PERMISSION ROUTE
+ADDED:
+- MoveDiceController.RequestMove is the single plain-C# entry point for movement permission in this pass.
+- It builds authoritative MoveDiceGateContext, evaluates the movement Gate collection, executes exactly one matching Step 2 Command when approved, records the returned BattleFact, and returns MoveDiceResult.
+- A rejected request returns a typed MoveDiceDenialReason, changes no authoritative state, and records no Fact.
+
+APPROVED COMMAND MAPPING:
+- Battle Inventory -> empty Board slot: PlaceDiceOnBoardCommand.
+- Battle Inventory -> occupied own Board slot: SwapBoardWithInventoryCommand.
+- Board -> Battle Inventory: ReturnDiceToInventoryCommand.
+- Board -> empty own Board slot: MoveDiceOnBoardCommand.
+- Board -> occupied own Board slot: SwapBoardDiceCommand.
+
+PRESERVE:
+- Commands remain approved-operation primitives; they do not become phase permission APIs.
+- BoardState remains occupancy authority; BattleInventoryState remains inventory-membership authority.
+- Views/AI/tutorial code must submit requests rather than duplicate these checks or call movement Commands directly.
+
+35. CORE MOVEMENT GATES ARE NARROW AND READ-ONLY
+ADDED CORE GATES:
+- MovementBattleGate: whether the battle is already complete and therefore blocks normal movement requests.
+- MovementControlGate: whether the requested tracked dice is controlled by the acting side.
+- MovementSourceGate: DECAYED/unavailable dice, exactly-one-source invariant, source slot condition, and source-side consistency.
+- MovementPhaseGate: Setup versus EnemyReposition versus PlayerReposition permission.
+- MovementDestinationGate: own-side destination, no-op rejection, Unbroken slot requirement, and occupied-destination runtime-state consistency.
+- MoveDiceGateCollection stops at the first specific denial.
+
+PRESERVE:
+- Gates read authoritative state and never mutate it.
+- Gate denial reasons are gameplay/referee results, not presentation state.
+- Defensive invariants in State/Commands still remain even after a Gate approves a request.
+
+36. SETUP AND REPOSITION MOVEMENT RULES ARE NOW EXPLICITLY ENFORCED
+SETUP:
+- Player or Enemy tracked dice may move between their own Battle Inventory and their own Unbroken Board slots.
+- Board-to-board moves/swaps on the same Side are allowed.
+- Inventory dice dropped onto an occupied own-side Board slot perform the existing Setup board/inventory swap.
+
+REPOSITION:
+- EnemyReposition permits only Enemy-side board-to-board movement/swap.
+- PlayerReposition permits only Player-side board-to-board movement/swap.
+- Battle Inventory is not a valid source or destination during either Reposition phase.
+- Rolling, DecayProcess, ScoreProcess, RoundEnd, GameEnd, and BattleEnd do not permit normal MoveDiceRequest movement.
+
+DEFERRED:
+- Setup currently has no authoritative sub-turn owner distinguishing enemy placement from player placement. The documentation establishes enemy actions occur before the player, but that sequencing belongs to the future battle/setup orchestration rather than an invented Step 3 flag.
+
+37. FUTURE PROCESS / TUTORIAL GATES HAVE AN EXTENSION POINT WITHOUT FAKE STATE
+ADDED:
+- IMoveDiceGate and read-only MoveDiceGateContext are public extension points.
+- MoveDiceController may receive additional Gates; core authoritative movement Gates always run first.
+- Reserved denial vocabulary includes ProcessingBlocksMovement, TutorialRestriction, and BlockingOperationInProgress so future Gates can report the documented reasons without changing the result contract.
+
+NOT IMPLEMENTED ON PURPOSE:
+- No Processing Gate yet because no authoritative active process/executor owner exists.
+- No TutorialRestriction Gate yet because no authoritative tutorial-step state exists.
+- No blocking-operation Gate yet because no authoritative blocking-operation owner exists.
+
+RULE:
+When those owners are implemented, add narrow Gates that read those owners. Do NOT add duplicate IsProcessing/IsTutorialLocked/etc. flags to DiceRuntimeState, BoardState, views, or transforms merely to make a Gate possible.
+
+38. MOVEMENT AVAILABILITY REMAINS SEPARATE FROM PRESENTATION AND INVENTORY ORDER
+CONFIRMED:
+- Step 3 determines gameplay permission from authoritative state only.
+- No transform position, hierarchy order, collider state, animation state, drawer ordering, or visual highlight is consulted by MoveDiceController/Gates.
+- Battle Inventory list order remains non-authoritative; movement code asks membership, not index/order.
+- Runtime drag/click views are intentionally NOT implemented in this pass because runtime dice spawning/state-to-view binding does not exist yet.
+
+FUTURE PRESENTATION RULE:
+A drag view may preview/follow a pointer, but on drop it submits MoveDiceRequest. The approved result/Facts and authoritative state decide the final visual position. A Transform reaching a slot is never proof that gameplay movement succeeded.
+
+39. STEP 3 FIRST-PASS EDITMODE COVERAGE ADDED
+ADDED MoveDiceControllerTests covering:
+- Setup inventory -> empty Board placement.
+- Setup inventory -> occupied Board inventory swap.
+- Setup Board -> Battle Inventory return preserving the same mutated runtime dice.
+- Setup Board -> empty Board movement.
+- Setup Board -> occupied Board swap.
+- Enemy Setup placement through the same controller.
+- cross-side destination denial.
+- Broken and Unstable destination denial.
+- other-side dice control denial.
+- untracked dice denial.
+- PlayerReposition board move and board swap approval.
+- PlayerReposition Board -> Inventory denial.
+- PlayerReposition Inventory -> Board denial.
+- EnemyReposition Enemy board movement approval.
+- wrong-side action denial in each Reposition phase.
+- movement denial during Rolling, DecayProcess, ScoreProcess, RoundEnd, and GameEnd.
+- DECAYED tracked/out-of-inventory dice unavailable.
+- same-slot and inventory-to-inventory no-op denial.
+- Unstable source slot denial.
+- invalid duplicate board+inventory source-state detection.
+- invalid occupied-destination membership-state detection.
+- approved Fact captures authoritative phase/game/round and is recorded once.
+- additional tutorial-style Gate can deny an otherwise legal request without state/history mutation.
+- additional Gate receives source resolved from authoritative state, not caller-supplied location.
+- BattleEnd rejects movement as battle complete.
+
+40. STEP 3 VALIDATION STATUS
+BASELINE EVIDENCE:
+- Step 2 branch was validated by Elise before this pass: 102/102 EditMode tests green and Play Mode works.
+- This Step 3 pass was based on files verified against GitHub step2 hashes for the core state/flow/command/test/tracker files.
+
+CURRENT PASS:
+- Documentation audit revision before Unity validation split battle-completion permission into MovementBattleGate, renamed the public controller entry point to RequestMove, corrected MoveDiceGateContext terminology so it is not described as a frozen snapshot, and expanded phase/destination denial coverage.
+- Step 3 is EditMode-focused by design. No disposable PlayMode drag harness was created because the real runtime dice spawning/view-binding pipeline does not yet exist.
+- The project now contains an expected 135 EditMode test cases: the validated 102-case Step 2 baseline plus 33 Step 3 movement cases.
+- Static checks found no delimiter-balance problems, missing C# meta files, duplicate DECAY meta GUIDs, forbidden scene-search communication, UnityEngine.Random use, gameplay Update polling, DiceLocation reintroduction, or phase enum arithmetic.
+- Diff against the validated Step 2 package is restricted to the new Movement code/tests and tracker/context updates; DECAY unity update.txt remains byte-identical to the Step 2 package.
+- Unity 6000.5.8f1 compilation and the full EditMode Test Runner must still be run locally before Step 3 is considered validated.
+
+OPEN / DEFERRED STEP 3 FOLLOW-UPS
+I. SETUP ACTION SEQUENCING
+Enemy actions must occur before player actions, but Setup currently has no authoritative actor-turn/subphase state. Establish this with the future battle/setup orchestration instead of adding a view-owned or duplicate flag.
+
+J. PROCESSING GATE OWNER
+When Roll/Decay/Score/inventory movement processes have an authoritative executor/process state, add the documented processing Gate by reading that owner.
+
+K. TUTORIAL / BLOCKING-OPERATION GATES
+Add these only when their authoritative state owners exist. The IMoveDiceGate extension point is already available; do not manufacture temporary flags.
+
+L. RUNTIME DICE VIEWS / INPUT
+Actual drag/click adapters and PlayMode movement tests should wait for real runtime dice spawning and state-to-view binding so validation exercises production wiring rather than disposable test-only objects.
+
+STEP 4 FIRST PASS - AUTHORITATIVE ROLL RESULTS + INJECTED RANDOMNESS
+Last updated: 2026-08-16
+Baseline: GitHub branch step-3. Elise validated the Step 3 reviewed package locally with all expected 135 EditMode test cases green before checkpointing it to branch step-3.
+
+41. GAMEPLAY RANDOMNESS NOW HAS ONE INJECTED SOURCE BOUNDARY
+ADDED:
+- IRandomSource with one explicit integer-range contract.
+- SeededRandomSource for normal battle randomness.
+- ScriptedRandomSource for deterministic tutorial/test sequences.
+
+RULES:
+- Core dice rolling does not call UnityEngine.Random or create its own hidden random source.
+- Scripted values are validated against the requested range and fail clearly when invalid or exhausted; they do not silently fall back to normal randomness.
+- Roll face draws use one-based face indices directly, matching DiceRuntimeState face identity and future authored tutorial roll sequences.
+
+WHY:
+DECAY unity update.txt explicitly requires one injected randomness source, seeded normal battles, and scripted tutorial sources. Keeping the interface generic also allows later enemy/effect systems to share the same battle-level randomness boundary instead of inventing parallel RNG ownership.
+
+42. FACE IDENTITY IS THE AUTHORITATIVE ROLL RESULT
+ADDED:
+- DiceRollResolver chooses a FaceIndex from the injected IRandomSource without mutating runtime state.
+- ApplyDiceRollCommand applies an already-resolved face result to DiceRuntimeState.
+- DiceRolledFact records BattleFactContext, DiceInstanceId, Side, SlotId, selected FaceIndex, and the RollValue that face had when the roll completed.
+
+CONFIRMED RULE:
+- Randomness selects a FACE, not a Roll Value.
+- FaceIndex and RollValue are deliberately separate. A selected face may have a battle-mutated RollValue while retaining the same face identity/sprite association.
+- RollValue remains constrained to 1..6 by the existing runtime mutation invariant.
+
+WHY:
+Known DECAY effects may mutate face RollValue without changing which face exists. Selecting a random RollValue directly would destroy that distinction and make future face-specific art/effects unreliable.
+
+43. ROLL PROCESS EXECUTION IS PLAIN C# AND PRESENTATION-INDEPENDENT
+ADDED:
+- RollExecutor performs the logical full-board Roll process only while BattleState.CurrentPhase is Rolling.
+- It validates all occupied board candidates before random resolution, resolves all face selections before any dice mutation, then applies one ApplyDiceRollCommand per candidate and records each DiceRolledFact in BattleHistory.
+- Empty board slots are skipped; an entirely empty board produces no DiceRolledFacts.
+
+PRESERVE:
+- RollExecutor changes authoritative roll state only. It does not spawn views, play the DICE_ROLL animation, wait on authored timing, or advance the phase.
+- Presentation will consume DiceRolledFact/current state later and may block flow without deciding the logical face result.
+- ApplyDiceRollCommand intentionally does NOT enforce BattlePhase.Rolling because the same approved face-application operation is a known future reuse point for Gamble rerolls during Reposition. The full-board RollExecutor owns initial-roll phase permission.
+
+OLD GAMEMAKER BEHAVIOR CHECK:
+- GameMaker v8_21 selected the logical rolled result before the authored roll sprite finished, then presentation displayed that already-decided result.
+- Unity preserves that behavior boundary while replacing direct irandom calls and roll-value-indexed identity with injected randomness plus explicit face identity.
+
+44. ROLL RANDOM-CONSUMPTION ORDER IS EXPLICIT AND PROCESS-SPECIFIC
+ADDED:
+- Full-board roll random draws iterate slot numbers 1 through 6.
+- Within each slot number, Enemy is drawn first and Player second.
+
+BOUNDARY:
+- This is ONLY the deterministic random-consumption order for the Roll process.
+- It does not establish a universal SlotId ordering, Decay precedence, Score precedence, effect ordering, or presentation timing.
+- Future Roll presentation may visually start both sides of one column together, as the prior GameMaker presentation did, without changing the already-resolved logical results.
+
+WHY:
+Seeded and scripted randomness must never depend on GameObject hierarchy, instance creation order, dictionary iteration, or frame timing. A Roll-specific order makes tutorial sequences and reproducible tests stable without imposing that order on unrelated processes.
+
+45. ROLL COMMAND DEFENSIVELY RECHECKS AUTHORITATIVE OWNERS
+ApplyDiceRollCommand rejects execution when:
+- the supplied SlotId is no longer occupied by the expected DiceInstanceId.
+- the slot is not Unbroken.
+- BattleInventoryState does not track the exact authoritative DiceRuntimeState instance.
+- the dice is simultaneously still a current Battle Inventory member.
+- dice owner and slot Side disagree.
+- the dice is DECAYED for the current game.
+- the selected FaceIndex does not exist.
+- the same Command attempts to execute twice.
+
+WHY:
+RollExecutor is the approved process path, but Commands remain defensive operation primitives. A stale plan or corrupted dual-membership state must fail before writing a false CurrentFace/DiceRolledFact.
+
+46. STEP 4 FIRST-PASS EDITMODE COVERAGE ADDED
+ADDED RollProcessTests covering:
+- identical SeededRandomSource sequences for identical seeds.
+- invalid seeded range rejection.
+- ScriptedRandomSource authored order, exhaustion, and invalid-value rejection without silent consumption/fallback.
+- exhausted scripted Roll input cannot leave a partially rolled board or partial roll history.
+- face-index selection remains separate from RollValue.
+- actual runtime face count is respected rather than assuming six stored faces.
+- full Roll process requires Rolling phase.
+- empty-board Roll behavior.
+- occupied Enemy/Player dice roll while empty slots are skipped.
+- explicit pair-number then Enemy/Player random-consumption order.
+- battle-mutated face RollValue is reported while selected FaceIndex remains unchanged.
+- a new Roll overwrites the prior CurrentFace.
+- DiceRolledFacts capture authoritative Rolling context and BattleHistory sequence.
+- untracked board dice, board+inventory dual membership, and DECAYED board dice fail before roll mutation/history writes.
+- ApplyDiceRollCommand single-execution and stale-slot defenses.
+
+EXPECTED TEST COUNT:
+- Step 3 validated baseline: 135 EditMode cases.
+- Step 4 adds 20 EditMode cases.
+- Expected total after import: 155 EditMode cases.
+
+47. STEP 4 VALIDATION STATUS
+STATIC / PACKAGE REVIEW COMPLETED:
+- Step 4 was built from the locally reviewed Step 3 package whose tracker, project-context, and DiceRuntimeState blobs match GitHub branch step-3; Elise independently confirmed that reviewed package passed all 135 Step 3 EditMode cases before pushing the checkpoint.
+- DECAY unity update.txt is intentionally not edited by this incremental pass; the Foundation Change Tracker remains the migration updater per Elise's documentation policy.
+- No scene, prefab, ProjectSettings, package dependency, input asset, or presentation asset changes are required for Step 4.
+- No UnityEngine.Random calls were added.
+- No DiceRuntimeState.Location or competing board/inventory authority was introduced.
+
+STILL REQUIRED LOCALLY:
+- Open in Unity 6000.5.8f1 and allow compilation/import.
+- Confirm zero new red Console errors.
+- Run all Decay.Tests.EditMode tests; expected total is 155 cases.
+
+OPEN / DEFERRED AFTER STEP 4 FIRST PASS
+M. ROLL PROCESS INVOCATION / PHASE ORCHESTRATION
+Step 5 should own the bounded round-flow invocation that transitions Setup -> Rolling, invokes RollExecutor once, waits for blocking Roll presentation when that layer exists, then advances to EnemyReposition. Do not let views call RollExecutor directly.
+
+N. PROCESSING GATE STATUS
+Step 4 now has a logical RollExecutor, but no asynchronous/blocking presentation execution state yet. Do not manufacture a duplicate IsProcessing flag solely for movement permission. Add the Processing Gate when the round/process executor has real active-operation state to expose.
+
+O. RUNTIME DICE VIEW / ROLL PRESENTATION
+Dice spawning/state-to-view binding and authored roll animation remain deferred. When implemented, DiceRolledFact/CurrentFace drive the final face shown; animation never chooses the result.
+
+P. GAMBLE REROLL SOURCE / CAUSALITY
+Gamble is known to reroll one selected own-side board dice during Reposition. It should reuse IRandomSource, DiceRollResolver, and ApplyDiceRollCommand. When Facts need to distinguish initial Roll from Gamble/tutorial/effect causes, add the previously planned typed source/reason concept rather than overloading BattleFactContext.
+
+STEP 5 FIRST PASS - BOUNDED ROUND FLOW + ENEMY/PLAYER ACTION ORDER
+SUPERSEDED HISTORY NOTICE (2026-08-16): Sections 48 onward below record the abandoned Setup-sub-turn implementation for migration history. They are NOT current architecture. `Docs/AI/DECAY_Foundation_Change_Tracker_Step5_Revision.txt` supersedes them; current Step 5 uses explicit EnemySetup/PlayerSetup phases and has fully removed BattleSetupTurn compatibility APIs.
+Last updated: 2026-08-16
+Baseline: GitHub branch step-4 at the current Step 4 checkpoint source; Step 4 Unity compilation/Test Runner validation remains pending. The existing step-5 branch was one clean commit behind step-4 and was fast-forwarded to the step-4 baseline before implementation.
+
+48. SETUP REMAINS ONE BATTLE PHASE; ACTOR ORDER IS AN AUTHORITATIVE SUB-TURN
+ADDED:
+- BattleSetupTurn with Enemy and Player values.
+- BattleState.CurrentSetupTurn as the single mutable owner of which Side may currently perform Setup movement.
+- Every new BattleState begins BattlePhase.Setup with BattleSetupTurn.Enemy.
+- RoundEnd -> Setup and GameEnd -> Setup reset CurrentSetupTurn to Enemy.
+- CompleteEnemySetupCommand changes the authoritative Setup turn from Enemy to Player and returns SetupTurnChangedFact.
+
+WHY:
+DECAY's glossary defines SETUP as one phase, while the rules separately require the Enemy to place/reposition before the Player. Splitting Setup into invented EnemySetup/PlayerSetup BattlePhase values would alter the documented phase model. BattleSetupTurn refines who may act inside the existing Setup phase without creating competing phase truth.
+
+PRESERVE:
+- BattleState remains the owner of current phase and Setup actor order.
+- Views, EnemyController, tutorials, and presentation must not maintain separate setup-turn flags.
+- Invalid/unrecognized BattleSetupTurn values fail clearly rather than silently defaulting to a Side.
+
+49. ENEMY SETUP AND PLAYER SETUP NOW USE THE SAME MOVEMENT AUTHORITY
+CHANGED:
+- MovementPhaseGate now reads BattleState.CurrentSetupTurn during BattlePhase.Setup.
+- Enemy MoveDiceRequests are permitted during Enemy Setup and Player requests are denied.
+- After CompleteEnemySetupCommand resolves, Player MoveDiceRequests are permitted and further Enemy Setup movement is denied.
+- BattlePhaseController also rejects a direct Setup -> Rolling PhaseChangeRequest with PhaseChangeDenialReason.EnemySetupIncomplete until CurrentSetupTurn is Player, so lower-level phase access cannot bypass the sequencing rule.
+- EnemyReposition and PlayerReposition continue to use the same existing MoveDiceController Request -> Gate -> Command -> Fact route and remain board-only.
+- Added MoveDiceDenialReason.ActingSideDoesNotMatchSetupTurn without renumbering existing denial values.
+
+PRESERVE:
+- Enemy logic does not receive a privileged board-mutation route.
+- A future EnemyController plans actions, submits the same MoveDiceRequest used by Player/tutorial/developer callers, observes approvals/results, then reports that its bounded action sequence is complete.
+- BoardState remains occupancy authority and BattleInventoryState remains inventory membership authority.
+
+50. BATTLECONTROLLER OWNS BOUNDED FLOW, NOT THE RULES IT INVOKES
+ADDED:
+- BattleController as a plain-C# bounded orchestration owner.
+- BattleFlowResult and BattleFlowDenialReason for explicit approved/rejected orchestration requests.
+
+CURRENT FIRST-PASS BOUNDARIES:
+- CompleteEnemySetup: Enemy Setup -> Player Setup within BattlePhase.Setup.
+- RequestRoll: requires Player Setup, asks BattlePhaseController to enter Rolling, invokes RollExecutor exactly once, and leaves the battle in Rolling.
+- CompleteRoll: explicit completion boundary from resolved Rolling -> EnemyReposition.
+- CompleteEnemyReposition: EnemyReposition -> PlayerReposition.
+- RequestDecay: PlayerReposition -> DecayProcess.
+
+DO NOT EXPAND BATTLECONTROLLER AUTHORITY:
+- It does not validate or execute dice movement; MoveDiceController owns that route.
+- It does not choose enemy placements/repositions; future EnemyController/plan logic owns those choices.
+- It does not select random faces; RollExecutor/DiceRollResolver/IRandomSource own Roll results.
+- It does not calculate DECAY, SAVES, SCORE, GameEnd cleanup, or dice effects.
+- It does not spawn/move views or choose animation results.
+- It advances phases only through the existing BattlePhaseController/PhaseChangeRequest authority rather than mutating BattleState.CurrentPhase directly.
+
+51. ROLL NOW HAS AN EXPLICIT LOGICAL-RESULT / BLOCKING-PRESENTATION BOUNDARY
+CONFIRMED:
+- RequestRoll enters Rolling and executes the logical Roll once.
+- BattleController remains in Rolling after logical roll resolution until CompleteRoll is called.
+- `_isRollResolvedAwaitingCompletion` exists only inside BattleController to prove that this BattleController actually completed the logical roll before allowing the completion boundary.
+- CompleteRoll advances to EnemyReposition only after that logical result exists.
+
+FUTURE PRESENTATION WIRING:
+- When BattlePresentationDirector/runtime Roll presentation exists, it should consume the completed Roll facts/state and call the completion boundary only after the required blocking authored presentation reports real completion.
+- Do not replace this with a hardcoded timer or have animation choose/modify roll results.
+- Until presentation wiring exists, the composition root may call CompleteRoll immediately after it has handled RequestRoll's approved result.
+
+52. STEP 5 STOPS AT ENTERING DECAYPROCESS
+INTENTIONAL BOUNDARY:
+- RequestDecay changes PlayerReposition -> DecayProcess through the existing phase controller.
+- Step 5 does not manufacture placeholder DecayResolver, ScoreResolver, Save state, unstable cleanup, or fake process Facts merely to continue the round farther.
+
+WHY:
+The DECAY process has confirmed simultaneous opposing-pair ordering and save semantics that deserve their own resolver/executor work. Inventing a trivial placeholder now would create the disposable foundation explicitly prohibited by DECAY unity update.txt.
+
+53. STEP 5 EDITMODE COVERAGE ADDED / REVISED
+ADDED BattleControllerTests covering:
+- battle starts with Enemy Setup authority.
+- Enemy Setup completion hands authority to Player and records SetupTurnChangedFact.
+- Enemy Setup cannot complete twice in one round.
+- Roll request is rejected until Enemy Setup has completed, and the lower-level BattlePhaseController independently rejects the same premature Setup -> Rolling transition.
+- RequestRoll enters Rolling, invokes the logical Roll exactly once, and cannot be repeated while already Rolling.
+- CompleteRoll rejects a Rolling phase that did not resolve through this BattleController.
+- CompleteRoll advances to EnemyReposition after the resolved Roll boundary.
+- one shared MoveDiceController follows Enemy Setup -> Player Setup -> Roll -> Enemy Reposition -> Player Reposition -> DecayProcess.
+- starting the next round resets Setup authority to Enemy.
+
+REVISED MoveDiceControllerTests:
+- Existing Step 3 player-Setup fixtures now explicitly begin after the Enemy Setup handoff rather than assuming both Sides can act simultaneously.
+- Added denial coverage for Player movement during Enemy Setup and Enemy movement after Player Setup begins.
+- Existing Enemy Setup placement test explicitly starts on the Enemy Setup turn and still uses the same MoveDiceController.
+
+REVISED BattleStateTests:
+- Existing phase-progression helpers now explicitly complete Enemy Setup before requesting Setup -> Rolling.
+- Existing test count is unchanged; this removes the old assumption that Setup -> Rolling is legal before the enemy-first Setup boundary resolves.
+
+EXPECTED TEST COUNT:
+- Step 4 expected baseline: 155 EditMode cases.
+- Step 5 adds 11 EditMode cases total: 9 BattleController cases plus 2 new movement sequencing cases.
+- Expected total after import: 166 EditMode cases.
+
+54. STEP 5 VALIDATION STATUS
+STATIC / CONNECTOR REVIEW COMPLETED:
+- step-5 was fast-forwarded cleanly from the step-4 baseline before edits; step-4 itself was not modified.
+- The Step 5 diff is code/tests/docs only; no scene, prefab, package, ProjectSettings, or presentation asset edits were required.
+- Setup actor order is authoritative runtime state, not a view convention.
+- Enemy/Player Setup and Enemy/Player Reposition share MoveDiceController rather than maintaining separate rule implementations.
+- BattleController uses BattlePhaseController for phase authority and RollExecutor for Roll authority.
+- BattlePhaseController independently protects Setup -> Rolling from bypassing incomplete Enemy Setup.
+- The Roll completion seam does not guess presentation duration.
+- No Enemy strategy, DECAY, SCORE, effect, or view authority was added to BattleController.
+- Invalid BattleSetupTurn values now fail explicitly instead of silently behaving like Player Setup.
+- UnityProjectContext.md was updated to reflect the Step 5 first pass and current deferred boundaries.
+
+NOT VALIDATED IN UNITY HERE:
+- No Unity Editor/MCP or CI runner is connected in this environment.
+- Therefore this pass does NOT claim compilation or green tests.
+- Open in Unity 6000.5.8f1, confirm no red Console errors, and run all Decay.Tests.EditMode tests; expected total is 166 cases.
+
+RESOLVED STEP 3 / STEP 4 FOLLOW-UPS
+- I. Setup action sequencing: RESOLVED by BattleSetupTurn owned by BattleState and enforced through MovementPhaseGate plus the Setup -> Rolling progression guard.
+- M. Roll process invocation / phase orchestration: RESOLVED for the current foundation by BattleController.RequestRoll + CompleteRoll.
+
+OPEN / DEFERRED AFTER STEP 5 FIRST PASS
+Q. ENEMYCONTROLLER PLANNING / ACTION EXECUTION
+The authority path is ready, but actual enemy setup/reposition strategy is not implemented in Step 5. EnemyController should plan deterministic/weighted actions from authoritative state and submit the same MoveDiceRequests; it must never mutate BoardState directly. It should call CompleteEnemySetup / CompleteEnemyReposition only after its approved plan finishes.
+
+R. ROLL PRESENTATION COMPLETION WIRING
+BattleController now has the logical completion boundary. Runtime DiceView binding and BattlePresentationDirector must later display DiceRolledFact/current face and signal CompleteRoll after blocking animation completes. Presentation never selects the face or changes the result.
+
+S. PROCESSING / BLOCKING MOVEMENT GATES
+A real bounded flow owner now exists, but no asynchronous presentation/process participation model is wired yet. Do not create duplicate per-dice IsProcessing flags. Add the Processing/blocking Gate when the presentation/process executor exposes actual active participation that movement permission can read.
+
+T. DECAY + SAVE RESOLVER / EXECUTOR
+The next process foundation must implement the confirmed opposing SlotPairId 1..6 resolution, simultaneous same-number side handling, WILLDECAY/TARGETED/SAVE/WILLSAVE/SAVIOR/SAVED semantics, deterministic save consumption, slot break/unstable results, structured Facts, and presentation-completion boundaries without moving rule authority into animation.
+
+U. SCORE / ROUNDEND / GAMEEND LIFECYCLE
+Score order, Unstable ejection/break cleanup, RoundEnd branching, board reset, DECAYED dice repopulation from the correct source, game score transfer/reset, and battle-end comparison remain separate explicit lifecycle work. Do not hide these inside BattleState or BattleController simply to make the loop advance.
+
+V. GAMBLE REROLL SOURCE / CAUSALITY
+Gamble remains deferred and should reuse IRandomSource, DiceRollResolver, and ApplyDiceRollCommand during Reposition. Add a typed operation source/reason when Facts need to distinguish Roll from Gamble/tutorial/effect causes rather than overloading BattleFactContext.
+
+
+STEP 6 FIRST PASS - BATTLE BOOTSTRAP + RUNTIME DICE VIEW BINDING
+Last updated: 2026-08-16
+Baseline: GitHub FINAL-step-5 / locally validated Step 5 v2.1 package. Elise confirmed all 174 Step 5 EditMode checks passed in Unity 6000.5.8f1 before this pass.
+
+55. BATTLE BOOTSTRAP NOW ASSEMBLES THE EXISTING AUTHORITIES
+ADDED:
+- BattleBootstrapper creates battle-local DiceRuntimeState copies from a supplied GlobalInventoryState Player selection plus authored Enemy DiceRuntimeSeed values.
+- BattleRuntime is the composition result exposing the already-authoritative BattleState, BoardState, BattleInventoryState, BattleHistory, MoveDiceController, and BattleController for one battle.
+- Runtime DiceInstanceId values are allocated uniquely and deterministically during bootstrap. Their numeric order is construction identity only and MUST NOT become gameplay resolution order.
+- Player battle dice retain SourceOwnedDiceId and copy their starting battle values from Global Inventory without mutating Global Inventory.
+- Enemy dice are constructed from explicit runtime seeds; no EnemyController/strategy is invented in this step.
+
+PRESERVE:
+- BattleBootstrapper wires existing systems; it does not become a gameplay-state owner.
+- BoardState remains board occupancy authority.
+- BattleInventoryState remains battle roster/inventory-membership authority.
+- GlobalInventoryState remains permanent Player dice source data.
+- BattleController remains bounded phase/process orchestration.
+- Bootstrap does not place dice on the board outside MoveDiceController.
+
+56. BATTLEINVENTORYSTATE EXPOSES ITS TRACKED ROSTER READ-ONLY
+ADDED:
+- BattleInventoryState.TrackedDiceIds exposes the owner's stable construction roster through a read-only collection.
+- This exists so presentation/bootstrap consumers can enumerate the dice BattleInventoryState already owns without maintaining a separate mutable roster.
+
+BOUNDARY:
+- TrackedDiceIds says which DiceRuntimeState instances belong to this battle.
+- It does NOT describe current location. BoardState and current Battle Inventory membership remain the location authorities.
+- Presentation order of Battle Inventory dice remains non-gameplay data.
+
+57. BATTLECOMPOSITIONROOT IS THE UNITY COMPOSITION BOUNDARY
+ADDED:
+- BattleCompositionRoot is the scene-facing composition root described by DECAY unity update.txt.
+- It can initialize from externally supplied GlobalInventoryState/Player selection/Enemy seeds/random sources for future campaign/tutorial composition.
+- SampleScene also contains explicit Inspector-authored startup data so the current project can open directly into a concrete integration battle without a separate disposable harness.
+- Inspector startup resolves stable DiceId values through DiceCatalog before constructing runtime seeds.
+
+PRESERVE:
+- Inspector-authored startup data is construction input, not live battle state.
+- Runtime definitions remain immutable.
+- External future systems may supply the real GlobalInventoryState without replacing BattleBootstrapper or presentation binding.
+- No scene search or string GameObject-name lookup is used for runtime composition.
+- Scene/input/layout configuration and the complete DiceView prefab plan are validated before the composition root publishes itself as initialized, so a known presentation configuration failure does not expose a half-ready runtime boundary.
+
+58. DICEVIEW BINDS TO IDENTITY; TRANSFORM NEVER BECOMES LOCATION AUTHORITY
+ADDED:
+- DiceView binds once to one DiceInstanceId.
+- BattleDiceViewCoordinator spawns exactly one DiceView for each tracked battle dice and resolves the DiceDefinition through DiceCatalog.
+- DiceView sprites are reconciled from authoritative DiceRuntimeState current face plus immutable DiceDefinition presentation data.
+- A dice on Board is positioned from its authoritative BoardState SlotId and the explicit scene presentation anchor for that SlotId.
+- A dice in Battle Inventory is positioned from BattleInventoryState membership plus the current presentation layout.
+- DECAYED/process-removed dice can be hidden when they are in neither current Board nor current Battle Inventory; later process presentation can animate that transition before final reconciliation.
+
+PRESENTATION SAFETY:
+- ReconcileAll is the non-animated fallback path and intentionally remains useful after animations are added. If presentation is skipped/interrupted, views can converge back to authoritative state.
+- Moving a DiceView Transform never changes BoardState or BattleInventoryState.
+- The current simple inventory row is presentation only. It is not a replacement for the known future Drawer/carousel; later Drawer presentation may replace inventory positioning without changing gameplay membership authority.
+
+59. SLOT / INVENTORY PRESENTATION TARGETS ARE EXPLICIT SCENE REFERENCES
+ADDED:
+- BattleSceneDiceLayout stores exactly 12 explicit SlotId -> Transform presentation anchors.
+- Player and Enemy Battle Inventory presentation anchors are explicit serialized references.
+- Player Battle Inventory drop targeting uses an explicit collider reference.
+
+PRESERVE:
+- Slot identity is never inferred from names such as "1P" or hierarchy position.
+- Transform parentage remains presentation grouping only.
+- SampleScene now contains a dedicated DiceViewRoot under BOARD for dynamic battle dice.
+
+60. PLAYER DRAG INPUT USES THE EXISTING MOVEDICE REQUEST PATH
+ADDED:
+- BattleDiceInputController performs only continuous pointer-follow presentation during an active drag.
+- On release it resolves an explicit presentation target and submits MoveDiceRequest through BattleCompositionRoot -> MoveDiceController.
+- Approved or rejected results both finish by reconciling the DiceView from authoritative state.
+- Enemy dice are not made Player-draggable.
+
+IMPORTANT:
+- The drag preview is allowed to temporarily move a Transform without changing gameplay state.
+- No movement rule is duplicated in the input component. Phase, ownership, source, destination, and battle-completion permission still come from the Step 3 Gates.
+- Step 6 does not add Hourglass phase input, EnemyController behavior, tutorial control, or animation sequencing.
+
+61. FIRST REAL SAMPLE BATTLE DATA / PREFAB ADDED
+ADDED:
+- conf_BATTLE_Standard uses the confirmed 2 games / 4 rounds / capacity 10 configuration.
+- def_DICE_NeutralD6 contains six authored 1..6 faces and existing neutral/face sprites.
+- catalog_DICE resolves dice.neutral_d6.
+- PF_DiceView is the default world-space DiceView prefab using the existing unlit material.
+- SampleScene inspector startup currently supplies six Player neutral dice and six Enemy neutral dice for integration inspection.
+
+INTENTIONAL SAMPLE-SCENE LIMIT:
+- BattleState still begins in EnemySetup.
+- Step 6 does NOT auto-place Enemy dice, auto-complete EnemySetup, or manufacture temporary AI. Player movement will therefore remain correctly denied until EnemySetup is completed through the existing BattleController boundary by a real/future caller or test.
+- This is deliberate: Step 6 restores construction/view/input foundations without hiding the still-missing Enemy behavior behind fake gameplay.
+
+62. STEP 6 TEST / VALIDATION STATUS
+ADDED EDITMODE COVERAGE (9 cases):
+- battle bootstrap assembles both rosters in EnemySetup.
+- Player runtime copies preserve SourceOwnedDiceId and do not mutate Global Inventory.
+- unique battle DiceInstanceId allocation remains separate from OwnedDiceId.
+- duplicate Player selection rejection.
+- missing Global Inventory selection rejection.
+- null Enemy seed rejection.
+- explicit primary + fallback random-source requirement.
+- bootstrapped runtime reuses MoveDiceController authority.
+- tracked roster view is read-only.
+
+ADDED PLAYMODE COVERAGE (6 cases):
+- one ID-bound DiceView spawns per tracked battle dice.
+- initial inventory view placement comes from presentation layout while membership remains authoritative elsewhere.
+- approved movement reconciles to the authoritative SlotId anchor.
+- rejected movement repairs drag-preview drift back to authoritative location.
+- Roll result updates the bound view to the authoritative face sprite.
+- explicit reconciliation repairs arbitrary presentation drift without changing gameplay state.
+
+EXPECTED AFTER IMPORT:
+- Step 5 validated baseline: 174 EditMode cases.
+- Step 6 adds 9 EditMode cases -> expected 183 EditMode cases.
+- Step 6 introduces 6 PlayMode cases.
+
+STATIC PACKAGE REVIEW COMPLETED:
+- ProjectVersion remains Unity 6000.5.8f1.
+- No missing Assets .meta files found.
+- No duplicate Assets GUIDs found.
+- No duplicate SampleScene local file IDs found.
+- New prefab/data assets resolve their referenced project GUIDs.
+- No GameObject.Find, FindObjectOfType, UnityEngine.Random, CurrentPhase++, or DiceRuntimeState location authority was added.
+- New dynamic dice are under a dedicated DiceViewRoot; Board/Inventory location is still authoritative state rather than Transform state.
+
+STILL REQUIRED LOCALLY:
+- Unity 6000.5.8f1 compilation/import.
+- Confirm no new red Console errors.
+- Run all Decay.Tests.EditMode tests; expected 183.
+- Run all Decay.Tests.PlayMode tests; expected 6.
+- Enter Play Mode and visually inspect the initial Player/Enemy neutral dice rows and scene presentation scale/placement.
+
+NEXT IMPLEMENTATION BOUNDARY:
+Step 7 is DecayResolver + Saves. Do not expand Step 6 into DECAY rules, Score, Enemy AI, Gamble, tutorial logic, Drawer/carousel behavior, or polished animation sequencing.
+
+
+STEP 7 FIRST PASS - DECAY RESOLVER + SAVES
+Last updated: 2026-08-16
+Baseline: accepted GitHub step-6. Elise confirmed 183 EditMode + 6 PlayMode checks passed and runtime dice spawned correctly.
+
+63. STEP 6 RE-AUDIT BEFORE DECAY WORK
+- Re-read DECAY unity update.txt, the accepted Step 6 tracker/context, BattleBootstrapper, BattleCompositionRoot, BattleDiceViewCoordinator, BattleDiceInputController, BoardState, BattleInventoryState, DiceRuntimeState, BattleController, and Step 6 tests.
+- Re-checked the GameMaker v8_21 fallback DECAY implementation specifically for broken-pair Unstable propagation and SAVE timing.
+- No Step 6 gameplay-authority leak was found that blocks Step 7.
+- Known presentation follow-up retained: Enemy Battle Inventory dice currently display in the integration row; final enemy presentation should only show placed Board dice.
+- Input follow-up noted for later playability restoration: BattleDiceInputController currently stops hit scanning when it encounters an Enemy DiceView. If future camera overlap ever places an Enemy view in front of a Player view under the same pointer ray, that may block selecting the Player view; no rule authority depends on this and it is not changed in Step 7.
+- Git history note: step-6 and FINAL-step-5 are sibling snapshot commits from the same parent, so Git reports them as diverged even though the accepted Step 6 project includes the validated foundation. No Git history rewrite is performed here.
+
+64. DECAYRESOLVER CALCULATES ONE SIMULTANEOUS PAIR FROM ONE SNAPSHOT
+- DecayResolver reads BoardState + BattleInventoryState and resolves SlotPairId 1..6.
+- Enemy/Player outcomes in one numbered pair are approved from the same pre-commit snapshot. Enemy-then-Player is only deterministic command/Fact serialization after both outcomes are already decided; it is not gameplay precedence.
+- WILLDECAY and TARGETED are derived from roll value 6 and opposing roll value 6; no duplicate long-lived flags are stored on DiceRuntimeState.
+- Unstable dice are ineligible to decay but may still be a roll-6 decay source, matching the documented rule and GameMaker fallback.
+
+65. DECAYPROCESSSTATE OWNS EPHEMERAL WILLSAVES
+- DecayProcessState owns current pair progression and separate FIFO pending-save queues for Enemy and Player during one DECAY pass.
+- Each DecaySaveToken retains source DiceInstanceId + source SlotId. This preserves WILLSAVE/SAVIOR causality and deterministic activation order without permanent per-dice save flags.
+- A surviving rolled 1 creates its WILLSAVE only after its pair fully resolves, so it cannot save itself from an opposing 6.
+- A SAVED rolled 1 survives and may create its own new WILLSAVE after that pair, because its activation happens after successful resolution.
+
+66. BROKEN/UNSTABLE PAIR RULE IS PART OF DECAY FOUNDATION
+- If one slot is Broken while its opposing slot is Unbroken, the Unbroken slot becomes Unstable before that pair's decay eligibility is calculated.
+- After a dice DECAYS and creates a newly uneven pair, the still-Unbroken opposing slot becomes Unstable immediately, including an empty opposing slot.
+- Unstable slots do not allow their contained dice to decay. Final Unstable break/ejection and any end-of-score cascade remain Step 8 lifecycle work.
+
+67. DECAY COMMANDS AND FACTS PRESERVE AUTHORITY
+- DecayDiceCommand validates the approved target, removes Board occupancy, marks DiceRuntimeState DECAYED for the current game, then breaks the now-empty slot.
+- DECAYED dice remains tracked by BattleInventoryState and is not returned to current inventory membership. MarkDecayedForCurrentGame clears its current face.
+- SAVED dice remains on Board with its current face intact for ScoreProcess; its slot becomes Unstable.
+- Added SaveCreatedFact, SaveSpentFact, DiceSavedFact, DiceDecayedFact. Slot condition changes continue using SlotConditionChangedFact rather than adding duplicate slot-state history types.
+
+68. BATTLECONTROLLER NOW HAS A REAL DECAY COMPLETION BOUNDARY
+- RequestDecay transitions PlayerReposition -> DecayProcess and invokes logical DECAY exactly once.
+- DecayExecutionResult is an immutable process-local receipt with final per-pair snapshots, not gameplay authority.
+- DecayCompletionGate is read-only and verifies receipt context plus authoritative final slot/dice state.
+- CompleteDecay transitions DecayProcess -> ScoreProcess only when the current DECAY receipt remains valid.
+- DecayExecutor.ExecuteDecay remains internal so gameplay callers cannot bypass BattleController.
+- Score calculation is intentionally NOT implemented in this step.
+
+69. STEP 7 TEST / VALIDATION STATUS
+ADDED EDITMODE COVERAGE includes:
+- empty/no-threat boards; 6 vs dice; 6 vs empty; 1 timing; later 1 cannot retroactively save; 6v6 with zero/one/two saves; multiple save activation/consumption order; side-specific saves; SAVED 1 creating a later WILLSAVE; Broken-opposite Unstable protection; Unstable 6 source behavior; DECAYED membership/face invariants; SAVED face/Board invariants; Fact causality; whole-board prevalidation before first commit; BattleController completion receipt and corruption rejection; DecayExecutor architecture boundary.
+- Step 6 validated total 183 EditMode; Step 7 adds 26 expected cases -> expected 209 EditMode.
+
+ADDED PLAYMODE COVERAGE:
+- DECAYED dice views reconcile hidden from authoritative state after logical DECAY.
+- Step 6 validated total 6 PlayMode; Step 7 adds 1 -> expected 7 PlayMode.
+
+STATIC REVIEW COMPLETED OUTSIDE UNITY:
+- ProjectVersion remains Unity 6000.5.8f1.
+- No new GameObject.Find, FindObjectOfType, UnityEngine.Random, phase arithmetic, or Transform gameplay authority.
+- New DECAY logic is plain C# except existing composition/view adapters.
+- Step 7 does not implement Score, RoundEnd/GameEnd cleanup, Enemy AI, Gamble, tutorial, Drawer/carousel, or authored DECAY/SAVE animation timing.
+
+STILL REQUIRED LOCALLY:
+- Unity import/compile with zero red Console errors.
+- Run all EditMode tests; expected 209.
+- Run all PlayMode tests; expected 7.
+
+NEXT IMPLEMENTATION BOUNDARY:
+Step 8 is ScoreResolver + ScoreState + unstable ejection/break cleanup + round/game/battle lifecycle. After Step 8, stop expanding gameplay systems and enter repeated-battle runtime restoration/stabilization.
+
+70. STEP 7 PRE-TEST CAUSAL FACT CORRECTION
+- Re-audited Step 7 against DECAY unity update.txt sections 18 and Request/Gate/Command/Fact flow, with the CardHouse/Spire-derived requirement that resolved history preserve stable source/target identity rather than infer causality from mutated state.
+- DecaySideDecision now snapshots the opposing targeting 6 DiceInstanceId + SlotId whenever a side is TARGETED. This information is approved with the simultaneous pair decision before either side commits.
+- DiceSavedFact now records WasWillDecay, WasTargeted, and the opposing targeting 6 identity when one exists, in addition to the WILLSAVE/SAVIOR identity it already recorded.
+- DiceDecayedFact now records the opposing targeting 6 identity when WasTargeted is true. Self-only WILLDECAY outcomes intentionally have no TargetingDiceId/TargetingSlotId.
+- DecayDiceCommand receives the already-approved targeting source metadata only to emit the completed Fact; it does not derive targets or change DECAY rules.
+- This fixes the deterministic commit-order edge where the attacking 6 may already have been removed from BoardState before the opposing SAVED/DECAYED Fact is emitted. Presentation/tutorial/history therefore never need to reconstruct the attack source from current Board state.
+- No gameplay rule, DECAY order, save queue, slot mutation, phase transition, or Step 8 behavior changed.
+- Existing expected test totals remain 209 EditMode and 7 PlayMode; causal assertions were strengthened inside existing Step 7 tests rather than adding another test case.
+
+
+
+71. STEP 8 FIRST PASS - SCORE + ROUND/GAME/BATTLE LIFECYCLE
+Last updated: 2026-08-16
+Baseline: accepted GitHub step-7. Elise confirmed all expected 209 EditMode + 7 PlayMode checks passed before Step 8 work began.
+
+- Added ScoreState as sole score authority with separate round, current-game, completed-game battle, and derived display-total values per side.
+- Added ScoreResolver/ScoreExecutor/ScoreExecutionResult/ScoreCompletionGate. SCORE validates the full current board before commit, resolves same-number pairs in explicit 1..6 order, snapshots both sides of each pair before deterministic Enemy-then-Player Fact recording, and applies general Score Value + active face Score Value.
+- Added ScoreAppliedFact carrying stable dice/slot/face identity, component values, applied value, resulting round score, and resulting total score for later Abacus sequencing without history reconstruction.
+- BattleController.CompleteDecay now enters and executes ScoreProcess. CompleteScore gates the score receipt, enters RoundEnd, and executes RoundEnd cleanup behind a second explicit receipt.
+- RoundEndExecutor ejects SAVED dice from Unstable slots back to Battle Inventory, breaks those slots after scoring, preserves healthy Board survivors, clears round-local current faces, folds round score into game score, and evaluates game end only after cleanup.
+- CompleteRoundEnd either advances to the next EnemySetup/round or enters GameEnd and executes GameEnd lifecycle. No generic phase arithmetic was introduced.
+- GameEndExecutor folds game score into battle score. Between games it resets slot conditions, restores DECAYED Player dice from GlobalInventoryState, restores DECAYED Enemy dice from immutable BattleBootstrapper-captured battle-start seeds, and returns restored dice to Battle Inventory. Healthy survivors retain Board location and battle-local mutations.
+- Final-game GameEnd finalizes score without performing a between-game reset, then CompleteGameEnd enters BattleEnd and records PlayerWin/EnemyWin/Draw in BattleEndedFact.
+- Added RoundEndedFact, GameEndedFact, BattleEndedFact, DiceResetForNewGameFact and immutable lifecycle receipts/completion gates.
+- Score rollover and all required next-game reset sources are prevalidated before first lifecycle commit to avoid partial state on invariant failure.
+- BattleRuntime now exposes read-only ScoreState authority; BattleCompositionRoot exposes CompleteScore/CompleteRoundEnd/CompleteGameEnd and reconciles views after each boundary.
+- Added end-to-end regression coverage for a complete 2-game x 4-round battle, SAVED-6 scoring/ejection, DECAYED no-score behavior, early all-slots-broken GameEnd, between-game Player/Enemy reset sources, survivor persistence, and presentation reappearance of a restored DECAYED Player dice.
+
+EXPECTED AFTER IMPORT:
+- Step 7 validated baseline: 209 EditMode + 7 PlayMode.
+- Step 8 current test inventory: expected 230 EditMode + 8 PlayMode.
+
+STILL REQUIRED LOCALLY:
+- Unity 6000.5.8f1 import/compile with zero red Console errors.
+- Run all Decay.Tests.EditMode tests; expected 230.
+- Run all Decay.Tests.PlayMode tests; expected 8.
+- After validation, stop broad foundation expansion and begin repeated-battle runtime/presentation restoration before Enemy AI, Gamble, tutorial, and richer effects.
+
+
+STEP 8 v2 PRE-TEST COMPILE CORRECTION
+- RoundEndExecutor and GameEndExecutor are public process types so the existing public BattleController constructor has consistent parameter accessibility.
+- Their constructors/execution methods remain internal; lifecycle execution authority is unchanged.
+- No scoring, round, game, battle, DECAY, movement, presentation, or rule behavior changed.
