@@ -1,0 +1,55 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: dca00000000000000000000000000017, type: 3}
+  m_Name: def_DICE_NeutralD6
+  m_EditorClassIdentifier: Decay.Runtime::Decay.DiceDefinition
+  _id:
+    _value: dice.neutral_d6
+  _displayName: Neutral D6
+  _description: Baseline six-sided dice used for battle-system integration testing.
+  _baseGeneralScoreValue: 0
+  _faces:
+  - _faceIndex: 1
+    _rollValue: 1
+    _baseScoreValue: 1
+    _sprite: {fileID: 21300000, guid: f21f1c6dc606b2b48ba1149a24a4b7ab, type: 3}
+    _effects: []
+  - _faceIndex: 2
+    _rollValue: 2
+    _baseScoreValue: 2
+    _sprite: {fileID: 21300000, guid: 08eae063341271445a30de50456bd169, type: 3}
+    _effects: []
+  - _faceIndex: 3
+    _rollValue: 3
+    _baseScoreValue: 3
+    _sprite: {fileID: 21300000, guid: 741dad0a48483444f9b2b7de88ea184e, type: 3}
+    _effects: []
+  - _faceIndex: 4
+    _rollValue: 4
+    _baseScoreValue: 4
+    _sprite: {fileID: 21300000, guid: c6e1f04d1b9f9314a92639fee0ea5c38, type: 3}
+    _effects: []
+  - _faceIndex: 5
+    _rollValue: 5
+    _baseScoreValue: 5
+    _sprite: {fileID: 21300000, guid: 871fe3d2dee188f41a7b34b5d9eac00a, type: 3}
+    _effects: []
+  - _faceIndex: 6
+    _rollValue: 6
+    _baseScoreValue: 6
+    _sprite: {fileID: 21300000, guid: 3299b56384ac0664bb57f2e897ae9b8e, type: 3}
+    _effects: []
+  _tags: []
+  _effects: []
+  _inventorySprite: {fileID: 21300000, guid: e0d502562f995fe46ba00e97a755d4b9, type: 3}
+  _boardSprite: {fileID: 21300000, guid: e0d502562f995fe46ba00e97a755d4b9, type: 3}
+  _viewPrefab: {fileID: 100000, guid: 22daeefefa67478080d994d385dacf77, type: 3}
