@@ -17,6 +17,7 @@ namespace Decay
         private readonly Transform _diceViewRoot;
         private readonly BattleSceneDiceLayout _layout;
         private readonly Dictionary<DiceInstanceId, DiceView> _viewsByDiceId = new Dictionary<DiceInstanceId, DiceView>();
+        private readonly Dictionary<SlotId, GameObject> _brokenSlotMarkers = new Dictionary<SlotId, GameObject>();
 
         public BattleDiceViewCoordinator(
             BattleRuntime runtime,
@@ -95,6 +96,9 @@ namespace Decay
 
                 ReconcileOne(diceId, view);
             }
+
+            ReconcileBrokenSlotMarkers(Side.Enemy);
+            ReconcileBrokenSlotMarkers(Side.Player);
         }
 
         public bool TryGetView(DiceInstanceId diceId, out DiceView view)
@@ -160,6 +164,63 @@ namespace Decay
             // A tracked dice can intentionally be outside Board/Inventory while DECAY or another future
             // process owns its transition. Until presentation for that process is implemented, hide it.
             view.SetPresentation(ResolveSprite(definition, diceState, false), view.transform.position, false);
+        }
+
+        private void ReconcileBrokenSlotMarkers(Side side)
+        {
+            for (int slotNumber = BattleRules.FirstSlotNumber; slotNumber <= BattleRules.LastSlotNumber; slotNumber++)
+            {
+                var slotId = new SlotId(side, slotNumber);
+                bool shouldShow = _runtime.BoardState.GetSlot(slotId).Condition != SlotCondition.Unbroken;
+
+                if (!_brokenSlotMarkers.TryGetValue(slotId, out GameObject marker))
+                {
+                    if (!shouldShow)
+                    {
+                        continue;
+                    }
+
+                    marker = CreateBareBrokenSlotMarker(slotId);
+                    _brokenSlotMarkers.Add(slotId, marker);
+                }
+
+                marker.SetActive(shouldShow);
+            }
+        }
+
+        private GameObject CreateBareBrokenSlotMarker(SlotId slotId)
+        {
+            // This intentionally uses primitive geometry rather than a new authored asset or prefab so the
+            // current migration build visibly communicates an unusable slot with zero scene wiring. It is a
+            // presentation-only fallback and can later be replaced by the final broken-slot sprite/animation.
+            var marker = new GameObject($"BareBrokenSlot_{slotId}");
+            marker.transform.position = _layout.GetBrokenSlotMarkerPosition(slotId);
+            marker.transform.SetParent(_diceViewRoot, true);
+
+            CreateMarkerBar(marker.transform, 45f);
+            CreateMarkerBar(marker.transform, -45f);
+            return marker;
+        }
+
+        private void CreateMarkerBar(Transform markerRoot, float angleDegrees)
+        {
+            GameObject bar = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            bar.name = "Bar";
+            bar.transform.SetParent(markerRoot, false);
+            bar.transform.localPosition = Vector3.zero;
+            bar.transform.localRotation = Quaternion.Euler(0f, angleDegrees, 0f);
+            bar.transform.localScale = new Vector3(
+                _layout.BrokenSlotMarkerLength,
+                _layout.BrokenSlotMarkerThickness,
+                _layout.BrokenSlotMarkerWidth);
+
+            Collider collider = bar.GetComponent<Collider>();
+            if (collider != null)
+            {
+                // The marker is visual only and must never intercept dice or hourglass raycasts.
+                collider.enabled = false;
+                UnityEngine.Object.Destroy(collider);
+            }
         }
 
         private static Sprite ResolveSprite(DiceDefinition definition, DiceRuntimeState diceState, bool isOnBoard)
