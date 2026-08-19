@@ -83,6 +83,19 @@ namespace Decay
             return ApprovedFactsSince(firstFactIndex);
         }
 
+        internal DecayPreviewResult ResolveDecayPreview()
+        {
+            if (_battleState.IsBattleComplete)
+                throw new InvalidOperationException("Cannot resolve DECAY preview after the battle is complete.");
+            if (_battleState.CurrentPhase != BattlePhase.PlayerReposition)
+                throw new InvalidOperationException($"DECAY preview requires phase {BattlePhase.PlayerReposition}; current phase is {_battleState.CurrentPhase}.");
+
+            return _decayExecutor.ResolvePreview();
+        }
+
+        internal DecayExecutionResult ActiveDecayExecution => _activeDecayExecution;
+        internal ScoreExecutionResult ActiveScoreExecution => _activeScoreExecution;
+
         public BattleFlowResult RequestDecay()
         {
             BattleFlowResult commonRejection = RejectIfBattleCompleteOrWrongPhase(BattlePhase.PlayerReposition);

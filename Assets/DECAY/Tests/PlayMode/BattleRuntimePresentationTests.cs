@@ -240,7 +240,25 @@ namespace Decay.Tests
             yield return null;
         }
 
-        private PresentationFixture CreateFixture(int[] primaryRolls = null, int enemyDiceCount = 1)
+        [UnityTest]
+        public IEnumerator PresentationDirector_WithNoAuthoredBindings_UsesCompletionHooksWithoutCreatingVisualFallbacks()
+        {
+            PresentationFixture fixture = CreateFixture(primaryRolls: new[] { 4 }, enemyDiceCount: 0, withPresentationDirector: true);
+            DiceInstanceId playerDiceId = new DiceInstanceId(1);
+            Assert.That(fixture.Root.RequestPlayerMove(
+                playerDiceId,
+                MoveDiceTarget.Board(new SlotId(Side.Player, 2))).IsApproved, Is.True);
+
+            BattleFlowResult roll = fixture.PresentationDirector.RequestRollFromHourglass();
+
+            Assert.That(roll.IsApproved, Is.True);
+            Assert.That(fixture.Root.Runtime.BattleState.CurrentPhase, Is.EqualTo(BattlePhase.PlayerReposition));
+            Assert.That(fixture.Root.Runtime.BattleInventoryState.GetDice(playerDiceId).CurrentFaceIndex, Is.EqualTo(4));
+            Assert.That(GetRequiredView(fixture.Root, playerDiceId).SpriteRenderer.sprite, Is.SameAs(fixture.FaceSprites[3]));
+            yield return null;
+        }
+
+        private PresentationFixture CreateFixture(int[] primaryRolls = null, int enemyDiceCount = 1, bool withPresentationDirector = false)
         {
             Sprite neutralSprite = CreateSprite();
             var faceSprites = new List<Sprite>();
@@ -266,7 +284,22 @@ namespace Decay.Tests
             rootObject.SetActive(false);
             BattleCompositionRoot root = rootObject.AddComponent<BattleCompositionRoot>();
             Transform diceViewRoot = Track(new GameObject("DiceViewRoot_Test")).transform;
-            root.ConfigureForTests(config, catalog, prefab, diceViewRoot, layout);
+
+            BattlePresentationDirector presentationDirector = null;
+            if (withPresentationDirector)
+            {
+                GameObject cameraObject = Track(new GameObject("PresentationCamera_Test"));
+                Camera presentationCamera = cameraObject.AddComponent<Camera>();
+                GameObject hourglassObject = Track(new GameObject("Hourglass_Framework_Test"));
+                BoxCollider hourglassCollider = hourglassObject.AddComponent<BoxCollider>();
+                HourglassView hourglass = hourglassObject.AddComponent<HourglassView>();
+                hourglass.ConfigureForTests(presentationCamera, hourglassCollider, root);
+
+                presentationDirector = rootObject.AddComponent<BattlePresentationDirector>();
+                presentationDirector.ConfigureForTests(hourglass);
+            }
+
+            root.ConfigureForTests(config, catalog, prefab, diceViewRoot, layout, presentationDirector: presentationDirector);
 
             GlobalInventoryState globalInventory = new GlobalInventoryState(new[]
             {
@@ -289,7 +322,7 @@ namespace Decay.Tests
                 primary,
                 new ScriptedRandomSource(new[] { 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1 }));
 
-            return new PresentationFixture(root, layout, diceViewRoot, neutralSprite, faceSprites);
+            return new PresentationFixture(root, layout, diceViewRoot, neutralSprite, faceSprites, presentationDirector);
         }
 
         private BattleSceneDiceLayout CreateLayout()
@@ -360,13 +393,15 @@ namespace Decay.Tests
                 BattleSceneDiceLayout layout,
                 Transform diceViewRoot,
                 Sprite neutralSprite,
-                IReadOnlyList<Sprite> faceSprites)
+                IReadOnlyList<Sprite> faceSprites,
+                BattlePresentationDirector presentationDirector)
             {
                 Root = root;
                 Layout = layout;
                 DiceViewRoot = diceViewRoot;
                 NeutralSprite = neutralSprite;
                 FaceSprites = faceSprites;
+                PresentationDirector = presentationDirector;
             }
 
             public BattleCompositionRoot Root { get; }
@@ -374,6 +409,7 @@ namespace Decay.Tests
             public Transform DiceViewRoot { get; }
             public Sprite NeutralSprite { get; }
             public IReadOnlyList<Sprite> FaceSprites { get; }
+            public BattlePresentationDirector PresentationDirector { get; }
         }
     }
 }

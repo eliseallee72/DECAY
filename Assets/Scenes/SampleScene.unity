@@ -198,6 +198,7 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 127742896}
+  - component: {fileID: 900000109}
   - component: {fileID: 127742899}
   - component: {fileID: 127742898}
   - component: {fileID: 127742897}
@@ -536,6 +537,7 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 279559191}
+  - component: {fileID: 900000108}
   - component: {fileID: 279559194}
   - component: {fileID: 279559193}
   - component: {fileID: 279559192}
@@ -852,6 +854,7 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 359147870}
+  - component: {fileID: 900000101}
   - component: {fileID: 359147873}
   - component: {fileID: 359147872}
   - component: {fileID: 359147871}
@@ -1057,6 +1060,7 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 707686541}
+  - component: {fileID: 900000103}
   - component: {fileID: 707686544}
   - component: {fileID: 707686543}
   - component: {fileID: 707686542}
@@ -1170,6 +1174,7 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 718778003}
+  - component: {fileID: 900000111}
   - component: {fileID: 718778006}
   - component: {fileID: 718778005}
   - component: {fileID: 718778004}
@@ -1283,6 +1288,7 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 755687736}
+  - component: {fileID: 900000102}
   - component: {fileID: 755687739}
   - component: {fileID: 755687738}
   - component: {fileID: 755687737}
@@ -1445,6 +1451,7 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 936854964}
+  - component: {fileID: 900000107}
   - component: {fileID: 936854967}
   - component: {fileID: 936854966}
   - component: {fileID: 936854965}
@@ -1742,6 +1749,7 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 1178197760}
+  - component: {fileID: 900000008}
   m_Layer: 0
   m_Name: ROUNDCOUNTER
   m_TagString: Untagged
@@ -1767,6 +1775,18 @@ Transform:
   - {fileID: 1151373616}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &900000008
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1178197759}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d9ae7f4c476a4d928f60e21f10e6f034, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Decay.Runtime::Decay.RoundCounterView
 --- !u!1 &1183145549
 GameObject:
   m_ObjectHideFlags: 0
@@ -2203,6 +2223,7 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 1318848664}
+  - component: {fileID: 900000104}
   - component: {fileID: 1318848667}
   - component: {fileID: 1318848666}
   - component: {fileID: 1318848665}
@@ -2316,6 +2337,7 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 1353645802}
+  - component: {fileID: 900000112}
   - component: {fileID: 1353645805}
   - component: {fileID: 1353645804}
   - component: {fileID: 1353645803}
@@ -3172,6 +3194,7 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 1910431662}
+  - component: {fileID: 900000105}
   - component: {fileID: 1910431665}
   - component: {fileID: 1910431664}
   - component: {fileID: 1910431663}
@@ -3285,6 +3308,7 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 1931743573}
+  - component: {fileID: 900000110}
   - component: {fileID: 1931743576}
   - component: {fileID: 1931743575}
   - component: {fileID: 1931743574}
@@ -3490,6 +3514,7 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 2031626328}
+  - component: {fileID: 900000106}
   - component: {fileID: 2031626331}
   - component: {fileID: 2031626330}
   - component: {fileID: 2031626329}
@@ -3715,6 +3740,7 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 2100751871}
+  - component: {fileID: 900000007}
   m_Layer: 0
   m_Name: BOARD
   m_TagString: Untagged
@@ -3741,6 +3767,18 @@ Transform:
   - {fileID: 900000011}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &900000007
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2100751870}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 7f41a615d82545e6b3290e851694a17f, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Decay.Runtime::Decay.BattleBoardView
 --- !u!1 &2140675253
 GameObject:
   m_ObjectHideFlags: 0
@@ -3845,6 +3883,7 @@ GameObject:
   - component: {fileID: 900000003}
   - component: {fileID: 900000004}
   - component: {fileID: 900000005}
+  - component: {fileID: 900000006}
   m_Layer: 0
   m_Name: BattleCompositionRoot
   m_TagString: Untagged
@@ -3919,7 +3958,23 @@ MonoBehaviour:
   _diceViewRoot: {fileID: 900000011}
   _diceLayout: {fileID: 900000004}
   _diceInputController: {fileID: 900000005}
+  _presentationDirector: {fileID: 900000006}
   _initializeOnAwake: 1
+--- !u!114 &900000006
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 900000001}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 2ec1f45386f74ad5ac76c877e894e87e, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Decay.Runtime::Decay.BattlePresentationDirector
+  _hourglassView: {fileID: 900000061}
+  _roundCounterView: {fileID: 900000008}
+  _boardView: {fileID: 900000007}
 --- !u!114 &900000004
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -3937,50 +3992,62 @@ MonoBehaviour:
       _side: 0
       _number: 1
     _anchor: {fileID: 359147870}
+    _slotView: {fileID: 900000101}
   - _slotId:
       _side: 0
       _number: 2
     _anchor: {fileID: 755687736}
+    _slotView: {fileID: 900000102}
   - _slotId:
       _side: 0
       _number: 3
     _anchor: {fileID: 707686541}
+    _slotView: {fileID: 900000103}
   - _slotId:
       _side: 0
       _number: 4
     _anchor: {fileID: 1318848664}
+    _slotView: {fileID: 900000104}
   - _slotId:
       _side: 0
       _number: 5
     _anchor: {fileID: 1910431662}
+    _slotView: {fileID: 900000105}
   - _slotId:
       _side: 0
       _number: 6
     _anchor: {fileID: 2031626328}
+    _slotView: {fileID: 900000106}
   - _slotId:
       _side: 1
       _number: 1
     _anchor: {fileID: 936854964}
+    _slotView: {fileID: 900000107}
   - _slotId:
       _side: 1
       _number: 2
     _anchor: {fileID: 279559191}
+    _slotView: {fileID: 900000108}
   - _slotId:
       _side: 1
       _number: 3
     _anchor: {fileID: 127742896}
+    _slotView: {fileID: 900000109}
   - _slotId:
       _side: 1
       _number: 4
     _anchor: {fileID: 1931743573}
+    _slotView: {fileID: 900000110}
   - _slotId:
       _side: 1
       _number: 5
     _anchor: {fileID: 718778003}
+    _slotView: {fileID: 900000111}
   - _slotId:
       _side: 1
       _number: 6
     _anchor: {fileID: 1353645802}
+    _slotView: {fileID: 900000112}
   _boardDiceHeight: 0.12
   _playerInventoryAnchor: {fileID: 900000041}
   _playerInventorySpacing: {x: 1.7, y: 0, z: 0}
@@ -4117,6 +4184,150 @@ BoxCollider:
   serializedVersion: 3
   m_Size: {x: 12, y: 0.2, z: 2.2}
   m_Center: {x: 0, y: 0, z: 0}
+--- !u!114 &900000101
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 359147869}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a77da07fceb9462ab2d402fc9dd4630a, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Decay.Runtime::Decay.SlotView
+--- !u!114 &900000102
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 755687735}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a77da07fceb9462ab2d402fc9dd4630a, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Decay.Runtime::Decay.SlotView
+--- !u!114 &900000103
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 707686540}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a77da07fceb9462ab2d402fc9dd4630a, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Decay.Runtime::Decay.SlotView
+--- !u!114 &900000104
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1318848663}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a77da07fceb9462ab2d402fc9dd4630a, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Decay.Runtime::Decay.SlotView
+--- !u!114 &900000105
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1910431661}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a77da07fceb9462ab2d402fc9dd4630a, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Decay.Runtime::Decay.SlotView
+--- !u!114 &900000106
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2031626327}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a77da07fceb9462ab2d402fc9dd4630a, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Decay.Runtime::Decay.SlotView
+--- !u!114 &900000107
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 936854963}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a77da07fceb9462ab2d402fc9dd4630a, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Decay.Runtime::Decay.SlotView
+--- !u!114 &900000108
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 279559190}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a77da07fceb9462ab2d402fc9dd4630a, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Decay.Runtime::Decay.SlotView
+--- !u!114 &900000109
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 127742895}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a77da07fceb9462ab2d402fc9dd4630a, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Decay.Runtime::Decay.SlotView
+--- !u!114 &900000110
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1931743572}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a77da07fceb9462ab2d402fc9dd4630a, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Decay.Runtime::Decay.SlotView
+--- !u!114 &900000111
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 718778002}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a77da07fceb9462ab2d402fc9dd4630a, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Decay.Runtime::Decay.SlotView
+--- !u!114 &900000112
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1353645801}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a77da07fceb9462ab2d402fc9dd4630a, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Decay.Runtime::Decay.SlotView
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0

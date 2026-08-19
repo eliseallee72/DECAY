@@ -4,8 +4,8 @@ using System.Collections.Generic;
 namespace Decay
 {
     /// <summary>
-    /// Owns the ordered logical DECAY process. Pair rules are calculated by DecayResolver; this executor
-    /// commits approved Commands/Facts in pair order 1..6 and owns process-local WILLSAVE queues.
+    /// Owns committed DECAY execution. Ordered rule calculation and process-local WILLSAVE sequencing are
+    /// shared with predictive preview through DecayProcessResolver; this executor alone commits Commands/Facts.
     /// </summary>
     public sealed class DecayExecutor
     {
@@ -14,6 +14,7 @@ namespace Decay
         private readonly BattleInventoryState _battleInventoryState;
         private readonly BattleHistory _history;
         private readonly DecayResolver _resolver;
+        private readonly DecayProcessResolver _processResolver;
         private readonly DecayCompletionGate _completionGate;
 
         public DecayExecutor(
@@ -27,6 +28,7 @@ namespace Decay
             _battleInventoryState = battleInventoryState ?? throw new ArgumentNullException(nameof(battleInventoryState));
             _history = history ?? throw new ArgumentNullException(nameof(history));
             _resolver = new DecayResolver(_boardState, _battleInventoryState);
+            _processResolver = new DecayProcessResolver(_resolver);
             _completionGate = new DecayCompletionGate(_battleState, _boardState, _battleInventoryState);
         }
 
@@ -37,7 +39,7 @@ namespace Decay
 
             ValidateWholeBoardBeforeCommit();
             int firstFactIndex = _history.Count;
-            var processState = new DecayProcessState(_battleState.CurrentFactContext);
+            var processState = new DecayProcessState();
             var pairResolutions = new List<DecayPairResolution>(BattleRules.SlotsPerSide);
 
             while (!processState.IsComplete)
@@ -55,42 +57,50 @@ namespace Decay
             return _completionGate.Evaluate(executionResult);
         }
 
+        internal DecayPreviewResult ResolvePreview()
+        {
+            ValidateWholeBoardBeforeCommit();
+            var processState = new DecayProcessState();
+            var pairs = new List<DecayPreviewPair>(BattleRules.SlotsPerSide);
+            while (!processState.IsComplete)
+            {
+                pairs.Add(new DecayPreviewPair(_processResolver.ResolveNext(processState)));
+            }
+            return new DecayPreviewResult(pairs.AsReadOnly());
+        }
+
         private DecayPairResolution ResolveNextPair(DecayProcessState processState)
         {
             RequireCurrentProcessState(processState);
-            SlotPairId pairId = processState.CurrentPairId;
-            DecaySaveToken? enemySave = processState.TryPeekNextSave(Side.Enemy, out DecaySaveToken e) ? e : (DecaySaveToken?)null;
-            DecaySaveToken? playerSave = processState.TryPeekNextSave(Side.Player, out DecaySaveToken p) ? p : (DecaySaveToken?)null;
-            DecayPairDecision decision = _resolver.ResolvePair(pairId, enemySave, playerSave);
+            DecayPairDecision decision = _processResolver.ResolveNext(processState);
+            SlotPairId pairId = decision.PairId;
 
             // Enemy then Player is only the deterministic commit/Fact tie-break inside one simultaneous pair.
-            // The resolver approved both side outcomes from the same pre-commit snapshot first.
+            // Both side outcomes were approved from the same pre-commit pair snapshot.
             if (decision.MarkEnemyUnstableBefore) MarkSlotUnstable(pairId.EnemySlot);
             if (decision.MarkPlayerUnstableBefore) MarkSlotUnstable(pairId.PlayerSlot);
 
-            ApplySideOutcome(processState, decision.Enemy);
-            ApplySideOutcome(processState, decision.Player);
+            ApplySideOutcome(decision.Enemy);
+            ApplySideOutcome(decision.Player);
 
             if (decision.MarkEnemyUnstableAfter) MarkSlotUnstable(pairId.EnemySlot);
             if (decision.MarkPlayerUnstableAfter) MarkSlotUnstable(pairId.PlayerSlot);
 
-            if (decision.CreateEnemySave) CreateSave(processState, decision.Enemy.Snapshot);
-            if (decision.CreatePlayerSave) CreateSave(processState, decision.Player.Snapshot);
+            if (decision.CreateEnemySave) RecordCreatedSave(decision.Enemy.Snapshot);
+            if (decision.CreatePlayerSave) RecordCreatedSave(decision.Player.Snapshot);
 
-            DecayPairResolution resolution = new DecayPairResolution(
+            return new DecayPairResolution(
                 pairId,
-                CaptureSideResolution(decision.Enemy.Snapshot),
-                CaptureSideResolution(decision.Player.Snapshot));
-            processState.AdvancePair();
-            return resolution;
+                CaptureSideResolution(decision.Enemy, decision.CreateEnemySave),
+                CaptureSideResolution(decision.Player, decision.CreatePlayerSave));
         }
 
-        private void ApplySideOutcome(DecayProcessState processState, DecaySideDecision decision)
+        private void ApplySideOutcome(DecaySideDecision decision)
         {
             if (decision.Outcome == DecayOutcome.Saved)
             {
                 if (!decision.SaveUsed.HasValue) throw new InvalidOperationException("SAVED outcome is missing its WILLSAVE source.");
-                DecaySaveToken token = processState.ConsumeNextSave(decision.Snapshot.SlotId.Side, decision.SaveUsed.Value);
+                DecaySaveToken token = decision.SaveUsed.Value;
                 _history.Record(new SaveSpentFact(
                     _battleState.CurrentFactContext,
                     token.SourceDiceId,
@@ -137,7 +147,7 @@ namespace Decay
             _history.Record(new SetSlotConditionCommand(_battleState, _boardState, slotId, SlotCondition.Unstable).Execute());
         }
 
-        private void CreateSave(DecayProcessState processState, DecaySideSnapshot snapshot)
+        private void RecordCreatedSave(DecaySideSnapshot snapshot)
         {
             SlotState slot = _boardState.GetSlot(snapshot.SlotId);
             if (!slot.HasDice || slot.OccupantDiceId != snapshot.DiceId)
@@ -146,13 +156,12 @@ namespace Decay
             if (!dice.HasCurrentFace || dice.ActiveRollValue != BattleRules.MinimumRollValue)
                 throw new InvalidOperationException("A WILLSAVE source must still have roll value 1 after its pair resolves.");
 
-            var token = new DecaySaveToken(snapshot.DiceId, snapshot.SlotId);
-            processState.AddSave(token);
             _history.Record(new SaveCreatedFact(_battleState.CurrentFactContext, snapshot.DiceId, snapshot.SlotId));
         }
 
-        private DecaySideResolution CaptureSideResolution(DecaySideSnapshot original)
+        private DecaySideResolution CaptureSideResolution(DecaySideDecision decision, bool createsSave)
         {
+            DecaySideSnapshot original = decision.Snapshot;
             SlotState slot = _boardState.GetSlot(original.SlotId);
             bool decayed = false;
             bool hasCurrentFace = false;
@@ -165,10 +174,23 @@ namespace Decay
             }
             return new DecaySideResolution(
                 original.SlotId,
+                original.EffectiveCondition,
+                original.HasDice,
+                original.DiceId,
+                original.RollValue,
+                decision.IsWillDecay,
+                decision.IsTargeted,
+                decision.TargetingDiceId,
+                decision.TargetingSlotId,
+                decision.IsDecayEligible,
+                decision.Outcome,
+                decision.SaveUsed.HasValue,
+                decision.SaveUsed.HasValue ? decision.SaveUsed.Value.SourceDiceId : default,
+                decision.SaveUsed.HasValue ? decision.SaveUsed.Value.SourceSlotId : default,
+                createsSave,
                 slot.Condition,
                 slot.HasDice,
                 slot.HasDice ? slot.OccupantDiceId : default,
-                original.DiceId,
                 decayed,
                 hasCurrentFace,
                 currentFaceIndex);
@@ -204,9 +226,6 @@ namespace Decay
         private void RequireCurrentProcessState(DecayProcessState processState)
         {
             if (processState == null) throw new ArgumentNullException(nameof(processState));
-            BattleFactContext current = _battleState.CurrentFactContext;
-            if (processState.Context != current)
-                throw new InvalidOperationException("DECAY process state does not belong to the active game/round/phase.");
             if (processState.IsComplete)
                 throw new InvalidOperationException("DECAY process state is already complete.");
         }

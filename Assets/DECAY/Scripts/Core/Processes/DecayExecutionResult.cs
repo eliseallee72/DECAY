@@ -4,8 +4,8 @@ using System.Collections.Generic;
 namespace Decay
 {
     /// <summary>
-    /// Immutable completion receipt for one full logical DECAY pass. It snapshots final per-pair
-    /// authority so leaving DecayProcess can be gated without turning the receipt into gameplay state.
+    /// Immutable completion receipt for one full logical DECAY pass. It preserves ordered authoritative
+    /// pair decisions plus final state so later presentation never has to reconstruct DECAY rules.
     /// </summary>
     internal sealed class DecayExecutionResult
     {
@@ -60,28 +60,68 @@ namespace Decay
     {
         internal DecaySideResolution(
             SlotId slotId,
+            SlotCondition effectiveConditionBefore,
+            bool hadDiceBefore,
+            DiceInstanceId originalDiceId,
+            int originalRollValue,
+            bool wasWillDecay,
+            bool wasTargeted,
+            DiceInstanceId targetingDiceId,
+            SlotId targetingSlotId,
+            bool wasDecayEligible,
+            DecayOutcome outcome,
+            bool usedSave,
+            DiceInstanceId saveSourceDiceId,
+            SlotId saveSourceSlotId,
+            bool createdSave,
             SlotCondition conditionAfter,
             bool hasDiceAfter,
             DiceInstanceId occupantDiceIdAfter,
-            DiceInstanceId originalDiceId,
             bool originalDiceDecayed,
             bool originalDiceHasCurrentFaceAfter,
             int originalDiceFaceIndexAfter)
         {
             SlotId = slotId;
+            EffectiveConditionBefore = effectiveConditionBefore;
+            HadDiceBefore = hadDiceBefore;
+            OriginalDiceId = originalDiceId;
+            OriginalRollValue = originalRollValue;
+            WasWillDecay = wasWillDecay;
+            WasTargeted = wasTargeted;
+            TargetingDiceId = targetingDiceId;
+            TargetingSlotId = targetingSlotId;
+            WasDecayEligible = wasDecayEligible;
+            Outcome = outcome;
+            UsedSave = usedSave;
+            SaveSourceDiceId = saveSourceDiceId;
+            SaveSourceSlotId = saveSourceSlotId;
+            CreatedSave = createdSave;
             ConditionAfter = conditionAfter;
             HasDiceAfter = hasDiceAfter;
             OccupantDiceIdAfter = occupantDiceIdAfter;
-            OriginalDiceId = originalDiceId;
             OriginalDiceDecayed = originalDiceDecayed;
             OriginalDiceHasCurrentFaceAfter = originalDiceHasCurrentFaceAfter;
             OriginalDiceFaceIndexAfter = originalDiceFaceIndexAfter;
         }
+
         internal SlotId SlotId { get; }
+        internal SlotCondition EffectiveConditionBefore { get; }
+        internal bool HadDiceBefore { get; }
+        internal DiceInstanceId OriginalDiceId { get; }
+        internal int OriginalRollValue { get; }
+        internal bool WasWillDecay { get; }
+        internal bool WasTargeted { get; }
+        internal DiceInstanceId TargetingDiceId { get; }
+        internal SlotId TargetingSlotId { get; }
+        internal bool WasDecayEligible { get; }
+        internal DecayOutcome Outcome { get; }
+        internal bool UsedSave { get; }
+        internal DiceInstanceId SaveSourceDiceId { get; }
+        internal SlotId SaveSourceSlotId { get; }
+        internal bool CreatedSave { get; }
         internal SlotCondition ConditionAfter { get; }
         internal bool HasDiceAfter { get; }
         internal DiceInstanceId OccupantDiceIdAfter { get; }
-        internal DiceInstanceId OriginalDiceId { get; }
         internal bool OriginalDiceDecayed { get; }
         internal bool OriginalDiceHasCurrentFaceAfter { get; }
         internal int OriginalDiceFaceIndexAfter { get; }

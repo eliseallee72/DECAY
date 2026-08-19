@@ -16,9 +16,11 @@ namespace Decay
         {
             [SerializeField] private SlotId _slotId;
             [SerializeField] private Transform _anchor;
+            [SerializeField] private SlotView _slotView;
 
             public SlotId SlotId => _slotId;
             public Transform Anchor => _anchor;
+            public SlotView SlotView => _slotView;
 
             public SlotAnchor()
             {
@@ -35,12 +37,6 @@ namespace Decay
         [SerializeField] private List<SlotAnchor> _slotAnchors = new List<SlotAnchor>();
         [SerializeField] private float _boardDiceHeight = 0.12f;
 
-        [Header("Bare Broken Slot Presentation")]
-        [SerializeField, Min(0f)] private float _brokenSlotMarkerHeight = 0.07f;
-        [SerializeField, Min(0.01f)] private float _brokenSlotMarkerLength = 1.1f;
-        [SerializeField, Min(0.01f)] private float _brokenSlotMarkerWidth = 0.12f;
-        [SerializeField, Min(0.005f)] private float _brokenSlotMarkerThickness = 0.03f;
-
         [Header("Player Battle Inventory Presentation")]
         [SerializeField] private Transform _playerInventoryAnchor;
         [SerializeField] private Vector3 _playerInventorySpacing = new Vector3(1.7f, 0f, 0f);
@@ -50,18 +46,9 @@ namespace Decay
         private readonly Dictionary<Transform, SlotId> _slotsByTransform = new Dictionary<Transform, SlotId>();
         private bool _isIndexed;
 
-        public float BrokenSlotMarkerLength => _brokenSlotMarkerLength;
-        public float BrokenSlotMarkerWidth => _brokenSlotMarkerWidth;
-        public float BrokenSlotMarkerThickness => _brokenSlotMarkerThickness;
-
         public Vector3 GetBoardDicePosition(SlotId slotId)
         {
             return GetRequiredBoardAnchor(slotId).position + (Vector3.up * _boardDiceHeight);
-        }
-
-        public Vector3 GetBrokenSlotMarkerPosition(SlotId slotId)
-        {
-            return GetRequiredBoardAnchor(slotId).position + (Vector3.up * _brokenSlotMarkerHeight);
         }
 
         public Vector3 GetPlayerInventoryDicePosition(int displayIndex, int displayCount)
@@ -83,6 +70,23 @@ namespace Decay
 
             float centeredIndex = displayIndex - ((displayCount - 1) * 0.5f);
             return _playerInventoryAnchor.position + (_playerInventorySpacing * centeredIndex);
+        }
+
+        public bool TryGetSlotView(SlotId slotId, out SlotView slotView)
+        {
+            EnsureIndex();
+            for (int i = 0; i < _slotAnchors.Count; i++)
+            {
+                SlotAnchor entry = _slotAnchors[i];
+                if (entry.SlotId == slotId)
+                {
+                    slotView = entry.SlotView;
+                    return slotView != null;
+                }
+            }
+
+            slotView = null;
+            return false;
         }
 
         public bool TryGetBoardSlot(Collider collider, out SlotId slotId)

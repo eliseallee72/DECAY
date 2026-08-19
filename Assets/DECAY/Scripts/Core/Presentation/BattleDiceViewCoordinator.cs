@@ -17,7 +17,6 @@ namespace Decay
         private readonly Transform _diceViewRoot;
         private readonly BattleSceneDiceLayout _layout;
         private readonly Dictionary<DiceInstanceId, DiceView> _viewsByDiceId = new Dictionary<DiceInstanceId, DiceView>();
-        private readonly Dictionary<SlotId, GameObject> _brokenSlotMarkers = new Dictionary<SlotId, GameObject>();
 
         public BattleDiceViewCoordinator(
             BattleRuntime runtime,
@@ -63,9 +62,9 @@ namespace Decay
                 DiceRuntimeState diceState = _runtime.BattleInventoryState.GetDice(diceId);
                 DiceDefinition definition = _diceCatalog.GetRequired(diceState.DefinitionId);
                 DiceView prefab = ResolveViewPrefab(definition);
-                if (prefab.SpriteRenderer == null)
+                if (!prefab.TryValidate(out string viewError))
                 {
-                    throw new InvalidOperationException($"Dice definition {definition.Id} resolves to a DiceView prefab without a SpriteRenderer reference.");
+                    throw new InvalidOperationException($"Dice definition {definition.Id} resolves to an invalid DiceView prefab: {viewError}");
                 }
 
                 spawnPlan.Add((diceId, prefab));
@@ -97,8 +96,6 @@ namespace Decay
                 ReconcileOne(diceId, view);
             }
 
-            ReconcileBrokenSlotMarkers(Side.Enemy);
-            ReconcileBrokenSlotMarkers(Side.Player);
         }
 
         public bool TryGetView(DiceInstanceId diceId, out DiceView view)
@@ -120,6 +117,43 @@ namespace Decay
             }
 
             return diceView;
+        }
+
+        internal void ReconcileDice(DiceInstanceId diceId)
+        {
+            if (!_viewsByDiceId.TryGetValue(diceId, out DiceView view))
+                throw new InvalidOperationException($"Tracked dice {diceId} does not have a spawned DiceView.");
+            ReconcileOne(diceId, view);
+        }
+
+        internal void ApplyPredictiveDecayPreview(DecayPreviewResult preview)
+        {
+            if (preview == null) throw new ArgumentNullException(nameof(preview));
+            ClearPredictiveDecayPresentation();
+            for (int i = 0; i < preview.Pairs.Count; i++)
+            {
+                ApplyPredictiveSide(preview.Pairs[i].Enemy);
+                ApplyPredictiveSide(preview.Pairs[i].Player);
+            }
+        }
+
+        internal void ClearPredictiveDecayPresentation()
+        {
+            foreach (DiceView view in _viewsByDiceId.Values)
+                view.ClearPredictiveDecayPresentation();
+        }
+
+        internal void CancelAllPresentation()
+        {
+            foreach (DiceView view in _viewsByDiceId.Values)
+                view.CancelAllPresentation();
+        }
+
+        private void ApplyPredictiveSide(DecayPreviewSide side)
+        {
+            if (!side.HasDice || !side.DiceId.IsValid) return;
+            if (_viewsByDiceId.TryGetValue(side.DiceId, out DiceView view))
+                view.SetPredictiveDecayPresentation(side.IsTargeted, side.IsWillDecay, side.WillCreateSave);
         }
 
         private void ReconcileOne(DiceInstanceId diceId, DiceView view)
@@ -164,63 +198,6 @@ namespace Decay
             // A tracked dice can intentionally be outside Board/Inventory while DECAY or another future
             // process owns its transition. Until presentation for that process is implemented, hide it.
             view.SetPresentation(ResolveSprite(definition, diceState, false), view.transform.position, false);
-        }
-
-        private void ReconcileBrokenSlotMarkers(Side side)
-        {
-            for (int slotNumber = BattleRules.FirstSlotNumber; slotNumber <= BattleRules.LastSlotNumber; slotNumber++)
-            {
-                var slotId = new SlotId(side, slotNumber);
-                bool shouldShow = _runtime.BoardState.GetSlot(slotId).Condition != SlotCondition.Unbroken;
-
-                if (!_brokenSlotMarkers.TryGetValue(slotId, out GameObject marker))
-                {
-                    if (!shouldShow)
-                    {
-                        continue;
-                    }
-
-                    marker = CreateBareBrokenSlotMarker(slotId);
-                    _brokenSlotMarkers.Add(slotId, marker);
-                }
-
-                marker.SetActive(shouldShow);
-            }
-        }
-
-        private GameObject CreateBareBrokenSlotMarker(SlotId slotId)
-        {
-            // This intentionally uses primitive geometry rather than a new authored asset or prefab so the
-            // current migration build visibly communicates an unusable slot with zero scene wiring. It is a
-            // presentation-only fallback and can later be replaced by the final broken-slot sprite/animation.
-            var marker = new GameObject($"BareBrokenSlot_{slotId}");
-            marker.transform.position = _layout.GetBrokenSlotMarkerPosition(slotId);
-            marker.transform.SetParent(_diceViewRoot, true);
-
-            CreateMarkerBar(marker.transform, 45f);
-            CreateMarkerBar(marker.transform, -45f);
-            return marker;
-        }
-
-        private void CreateMarkerBar(Transform markerRoot, float angleDegrees)
-        {
-            GameObject bar = GameObject.CreatePrimitive(PrimitiveType.Cube);
-            bar.name = "Bar";
-            bar.transform.SetParent(markerRoot, false);
-            bar.transform.localPosition = Vector3.zero;
-            bar.transform.localRotation = Quaternion.Euler(0f, angleDegrees, 0f);
-            bar.transform.localScale = new Vector3(
-                _layout.BrokenSlotMarkerLength,
-                _layout.BrokenSlotMarkerThickness,
-                _layout.BrokenSlotMarkerWidth);
-
-            Collider collider = bar.GetComponent<Collider>();
-            if (collider != null)
-            {
-                // The marker is visual only and must never intercept dice or hourglass raycasts.
-                collider.enabled = false;
-                UnityEngine.Object.Destroy(collider);
-            }
         }
 
         private static Sprite ResolveSprite(DiceDefinition definition, DiceRuntimeState diceState, bool isOnBoard)

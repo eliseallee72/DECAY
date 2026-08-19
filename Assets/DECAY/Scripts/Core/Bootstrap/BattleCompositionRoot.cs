@@ -36,6 +36,7 @@ namespace Decay
         [SerializeField] private Transform _diceViewRoot;
         [SerializeField] private BattleSceneDiceLayout _diceLayout;
         [SerializeField] private BattleDiceInputController _diceInputController;
+        [SerializeField] private BattlePresentationDirector _presentationDirector;
 
         [Header("Startup")]
         [SerializeField] private bool _initializeOnAwake = true;
@@ -78,7 +79,7 @@ namespace Decay
 
             // Enemy setup is a logical decision inside the shared Setup phase. Apply it before DiceViews
             // are created so Enemy Battle Inventory remains non-visible and Enemy dice first appear on Board.
-            runtime.EnemyController.ExecuteSetup();
+            EnemySetupExecutionResult initialEnemySetup = runtime.EnemyController.ExecuteSetup();
 
             var viewCoordinator = new BattleDiceViewCoordinator(
                 runtime,
@@ -97,6 +98,12 @@ namespace Decay
             {
                 _diceInputController.Bind(this, _viewCoordinator, _diceLayout);
             }
+
+            if (_presentationDirector != null)
+            {
+                _presentationDirector.Bind(this, _viewCoordinator, _diceLayout);
+                _presentationDirector.PresentEnemySetup(initialEnemySetup);
+            }
         }
 
         public MoveDiceResult RequestPlayerMove(DiceInstanceId diceId, MoveDiceTarget target)
@@ -104,6 +111,8 @@ namespace Decay
             MoveDiceResult result = Runtime.MoveDiceController.RequestMove(
                 new MoveDiceRequest(Side.Player, diceId, target));
             _viewCoordinator.ReconcileAll();
+            if (result.IsApproved)
+                _presentationDirector?.NotifyAuthoritativeBoardChanged();
             return result;
         }
 
@@ -188,7 +197,8 @@ namespace Decay
             DiceView defaultDiceViewPrefab,
             Transform diceViewRoot,
             BattleSceneDiceLayout diceLayout,
-            BattleDiceInputController diceInputController = null)
+            BattleDiceInputController diceInputController = null,
+            BattlePresentationDirector presentationDirector = null)
         {
             _initializeOnAwake = false;
             _battleConfig = battleConfig;
@@ -197,6 +207,7 @@ namespace Decay
             _diceViewRoot = diceViewRoot;
             _diceLayout = diceLayout;
             _diceInputController = diceInputController;
+            _presentationDirector = presentationDirector;
         }
 
 
@@ -204,7 +215,8 @@ namespace Decay
         {
             if (Runtime.BattleState.CurrentPhase == BattlePhase.Setup)
             {
-                Runtime.EnemyController.ExecuteSetup();
+                EnemySetupExecutionResult setupResult = Runtime.EnemyController.ExecuteSetup();
+                _presentationDirector?.PresentEnemySetup(setupResult);
             }
         }
 
@@ -299,6 +311,11 @@ namespace Decay
             if (_diceInputController != null && !_diceInputController.TryValidate(out string inputError))
             {
                 throw new InvalidOperationException(inputError);
+            }
+
+            if (_presentationDirector != null && !_presentationDirector.TryValidate(out string presentationError))
+            {
+                throw new InvalidOperationException(presentationError);
             }
         }
     }

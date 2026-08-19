@@ -5,19 +5,25 @@ using UnityEngine.InputSystem;
 namespace Decay
 {
     /// <summary>
-    /// Hourglass presentation/input surface. It collects pointer input and submits the appropriate battle-flow
-    /// requests to the composition root; it never changes phases or mutates gameplay state directly.
-    ///
-    /// Until authored blocking presentation is restored, clicks use the immediate fallback path:
-    /// Setup -> Roll -> EnemyReposition completion -> PlayerReposition, then
-    /// PlayerReposition -> Decay -> Score -> RoundEnd -> next Setup/GameEnd.
-    /// The existing explicit completion methods remain the seams that later animations will wait on.
+    /// Hourglass presentation/input surface. It collects pointer input and submits requests through the battle flow.
+    /// Authored hourglass visuals are editor-assigned Animator bindings; this View never changes gameplay state directly.
     /// </summary>
     public sealed class HourglassView : MonoBehaviour
     {
+        [Header("Input")]
         [SerializeField] private Camera _camera;
         [SerializeField] private Collider _interactionCollider;
         [SerializeField] private BattleCompositionRoot _compositionRoot;
+
+        [Header("Authored Presentation")]
+        [SerializeField] private AnimatorTriggerPresentationBinding _rollToRepositionPresentation = new AnimatorTriggerPresentationBinding();
+        [SerializeField] private AnimatorTriggerPresentationBinding _decayPresentation = new AnimatorTriggerPresentationBinding();
+        [SerializeField] private AnimatorTriggerPresentationBinding _resetToSetupPresentation = new AnimatorTriggerPresentationBinding();
+
+        private BattlePresentationDirector _presentationDirector;
+        private Action _rollCompletion;
+        private Action _decayCompletion;
+        private Action _resetCompletion;
 
         public bool TryValidate(out string error)
         {
@@ -39,6 +45,13 @@ namespace Decay
                 return false;
             }
 
+            if (!_rollToRepositionPresentation.TryValidate($"{name} Roll Presentation", out error)
+                || !_decayPresentation.TryValidate($"{name} Decay Presentation", out error)
+                || !_resetToSetupPresentation.TryValidate($"{name} Reset Presentation", out error))
+            {
+                return false;
+            }
+
             error = string.Empty;
             return true;
         }
@@ -46,35 +59,89 @@ namespace Decay
         public BattleFlowResult RequestRoll()
         {
             if (!TryValidate(out string error))
-            {
                 throw new InvalidOperationException(error);
-            }
-
             return _compositionRoot.RequestRoll();
         }
 
         public BattleFlowResult RequestDecay()
         {
             if (!TryValidate(out string error))
-            {
                 throw new InvalidOperationException(error);
-            }
-
             return _compositionRoot.RequestDecay();
         }
 
+        internal void BindPresentationDirector(BattlePresentationDirector presentationDirector)
+        {
+            _presentationDirector = presentationDirector ?? throw new ArgumentNullException(nameof(presentationDirector));
+        }
+
+        internal void UnbindPresentationDirector(BattlePresentationDirector presentationDirector)
+        {
+            if (_presentationDirector == presentationDirector)
+                _presentationDirector = null;
+        }
+
+        internal void PlayRollPresentation(Action onCompleted) =>
+            StartAuthoredPresentation(_rollToRepositionPresentation, ref _rollCompletion, onCompleted);
+
+        internal void PlayDecayPresentation(Action onCompleted) =>
+            StartAuthoredPresentation(_decayPresentation, ref _decayCompletion, onCompleted);
+
+        internal void PlayResetPresentation(Action onCompleted) =>
+            StartAuthoredPresentation(_resetToSetupPresentation, ref _resetCompletion, onCompleted);
+
         /// <summary>
-        /// Completion hook for authored Roll presentation. Rules have already resolved when Roll starts;
-        /// this reports that blocking presentation is finished so BattleController may enter EnemyReposition.
+        /// Animation Event endpoint for the authored Roll-to-Reposition presentation. When no director-owned
+        /// presentation is active, this preserves the existing explicit completion hook used by tests/fallback flow.
         /// </summary>
         public void NotifyRollPresentationComplete()
         {
-            if (_compositionRoot == null || !_compositionRoot.IsInitialized)
+            if (_rollCompletion != null)
             {
+                CompleteOneShot(ref _rollCompletion);
                 return;
             }
 
-            _compositionRoot.CompleteRoll();
+            if (_presentationDirector == null && _compositionRoot != null && _compositionRoot.IsInitialized)
+                _compositionRoot.CompleteRoll();
+        }
+
+        public void NotifyDecayPresentationComplete() => CompleteOneShot(ref _decayCompletion);
+        public void NotifyResetPresentationComplete() => CompleteOneShot(ref _resetCompletion);
+
+        internal void CancelRollPresentation()
+        {
+            _rollCompletion = null;
+            _rollToRepositionPresentation.Cancel();
+        }
+
+        internal void CancelAllPresentation()
+        {
+            CancelRollPresentation();
+            CancelOneShot(_decayPresentation, ref _decayCompletion);
+            CancelOneShot(_resetToSetupPresentation, ref _resetCompletion);
+        }
+
+        internal void AdvanceDecayImmediatelyToNextPlayableState()
+        {
+            BattleFlowResult decay = RequestDecay();
+            if (!decay.IsApproved)
+                return;
+
+            BattleFlowResult decayCompletion = _compositionRoot.CompleteDecay();
+            if (!decayCompletion.IsApproved)
+                return;
+
+            BattleFlowResult scoreCompletion = _compositionRoot.CompleteScore();
+            if (!scoreCompletion.IsApproved)
+                return;
+
+            BattleFlowResult roundCompletion = _compositionRoot.CompleteRoundEnd();
+            if (!roundCompletion.IsApproved)
+                return;
+
+            if (_compositionRoot.Runtime.BattleState.CurrentPhase == BattlePhase.GameEnd)
+                _compositionRoot.CompleteGameEnd();
         }
 
         internal void ConfigureForTests(
@@ -101,75 +168,70 @@ namespace Decay
 
             BattlePhase phase = _compositionRoot.Runtime.BattleState.CurrentPhase;
             if (phase != BattlePhase.Setup && phase != BattlePhase.PlayerReposition)
-            {
                 return;
-            }
 
             Ray ray = _camera.ScreenPointToRay(Mouse.current.position.ReadValue());
             if (!_interactionCollider.Raycast(ray, out _, _camera.farClipPlane))
-            {
                 return;
-            }
 
             if (phase == BattlePhase.Setup)
             {
-                AdvanceRollImmediatelyToPlayerReposition();
+                if (_presentationDirector != null)
+                    _presentationDirector.RequestRollFromHourglass();
+                else
+                    AdvanceRollImmediatelyToPlayerReposition();
                 return;
             }
 
-            AdvanceDecayImmediatelyToNextPlayableState();
+            if (_presentationDirector != null)
+                _presentationDirector.RequestDecayFromHourglass();
+            else
+                AdvanceDecayImmediatelyToNextPlayableState();
         }
 
         private void AdvanceRollImmediatelyToPlayerReposition()
         {
             BattleFlowResult roll = RequestRoll();
             if (!roll.IsApproved)
-            {
                 return;
-            }
 
             BattleFlowResult rollCompletion = _compositionRoot.CompleteRoll();
             if (!rollCompletion.IsApproved)
-            {
                 return;
-            }
 
-            // Enemy reposition strategy/presentation is intentionally still deferred. For this bare playable
-            // pass, completing the empty boundary preserves the authoritative phase order and gives control
-            // to PlayerReposition without inventing Enemy board mutations here.
             _compositionRoot.CompleteEnemyReposition();
         }
 
-        private void AdvanceDecayImmediatelyToNextPlayableState()
+        private static void StartAuthoredPresentation(
+            AnimatorTriggerPresentationBinding binding,
+            ref Action pendingCompletion,
+            Action onCompleted)
         {
-            BattleFlowResult decay = RequestDecay();
-            if (!decay.IsApproved)
+            pendingCompletion = null;
+            if (!binding.Play())
             {
+                onCompleted?.Invoke();
                 return;
             }
+            pendingCompletion = onCompleted;
+        }
 
-            BattleFlowResult decayCompletion = _compositionRoot.CompleteDecay();
-            if (!decayCompletion.IsApproved)
-            {
-                return;
-            }
+        private static void CancelOneShot(AnimatorTriggerPresentationBinding binding, ref Action pendingCompletion)
+        {
+            pendingCompletion = null;
+            binding.Cancel();
+        }
 
-            BattleFlowResult scoreCompletion = _compositionRoot.CompleteScore();
-            if (!scoreCompletion.IsApproved)
-            {
-                return;
-            }
+        private static void CompleteOneShot(ref Action pendingCompletion)
+        {
+            Action callback = pendingCompletion;
+            pendingCompletion = null;
+            callback?.Invoke();
+        }
 
-            BattleFlowResult roundCompletion = _compositionRoot.CompleteRoundEnd();
-            if (!roundCompletion.IsApproved)
-            {
-                return;
-            }
-
-            if (_compositionRoot.Runtime.BattleState.CurrentPhase == BattlePhase.GameEnd)
-            {
-                _compositionRoot.CompleteGameEnd();
-            }
+        private void OnDisable()
+        {
+            CancelAllPresentation();
         }
     }
 }
