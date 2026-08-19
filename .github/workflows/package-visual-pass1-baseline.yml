@@ -28,3 +28,5 @@ jobs:
           name: DECAY_Visual_Pass1_Baseline
           path: DECAY_Visual_Pass1_Baseline.zip
           if-no-files-found: error
+
+# Temporary workflow for the requested handoff archive; remove before the implementation branch is merged.
