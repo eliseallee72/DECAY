@@ -1,0 +1,27 @@
+name: Package Visual Pass 1 Baseline
+
+on:
+  push:
+    branches:
+      - visual-implementation-pass-1
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout current branch
+        uses: actions/checkout@v4
+
+      - name: Package requested Unity project roots
+        run: |
+          zip -r DECAY_Visual_Pass1_Baseline.zip Assets Packages ProjectSettings Docs ignore.conf
+
+      - name: Upload baseline archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: DECAY_Visual_Pass1_Baseline
+          path: DECAY_Visual_Pass1_Baseline.zip
+          if-no-files-found: error
