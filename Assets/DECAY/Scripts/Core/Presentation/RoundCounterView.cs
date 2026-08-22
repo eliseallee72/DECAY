@@ -9,6 +9,10 @@ namespace Decay
     /// </summary>
     public sealed class RoundCounterView : MonoBehaviour, IPointerPresentationTarget
     {
+        [Header("Animator")]
+        [Tooltip("Single Animator used by this RoundCounterView. If empty, the View auto-finds an Animator on this object or its children.")]
+        [SerializeField] private Animator _animator;
+
         [Header("Persistent Presentation")]
         [SerializeField] private AnimatorIntPresentationBinding _roundNumber = new AnimatorIntPresentationBinding();
         [SerializeField] private AnimatorBoolPresentationBinding _idlePresentation = new AnimatorBoolPresentationBinding();
@@ -28,6 +32,9 @@ namespace Decay
 
         public bool TryValidate(out string error)
         {
+            ResolveAnimatorReference();
+            BindPresentationAnimator();
+
             return _roundNumber.TryValidate($"{name} Round Number", out error)
                 && _idlePresentation.TryValidate($"{name} Idle", out error)
                 && _hoverPresentation.TryValidate($"{name} Hover", out error)
@@ -71,7 +78,40 @@ namespace Decay
 
         void IPointerPresentationTarget.PlayPointerPressPresentation() => _decorativePressPresentation.Play();
 
+        private void Awake()
+        {
+            ResolveAnimatorReference();
+            BindPresentationAnimator();
+        }
+
+        private void OnValidate()
+        {
+            ResolveAnimatorReference();
+            BindPresentationAnimator();
+        }
+
         private void OnDisable() => CancelAllPresentation();
+
+        private void ResolveAnimatorReference()
+        {
+            if (_animator != null)
+                return;
+
+            _animator = GetComponent<Animator>();
+            if (_animator == null)
+                _animator = GetComponentInChildren<Animator>(true);
+        }
+
+        private void BindPresentationAnimator()
+        {
+            _roundNumber.BindAnimator(_animator);
+            _idlePresentation.BindAnimator(_animator);
+            _hoverPresentation.BindAnimator(_animator);
+            _reconcilePresentation.BindAnimator(_animator);
+            _showRoundPresentation.BindAnimator(_animator);
+            _resetPresentation.BindAnimator(_animator);
+            _decorativePressPresentation.BindAnimator(_animator);
+        }
 
         private static void StartAuthoredPresentation(
             AnimatorTriggerPresentationBinding binding,
