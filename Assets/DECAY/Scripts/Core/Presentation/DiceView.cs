@@ -6,8 +6,9 @@ namespace Decay
 {
     /// <summary>
     /// Presentation for one battle dice. Gameplay state owns identity/location/availability; this View receives
-    /// authoritative visual content and semantic destinations. Authored Animator responses and optional editor-authored
-    /// procedural transform layers may be combined without either becoming gameplay authority.
+    /// authoritative visual content and semantic destinations, while Animator Controllers and Animation Clips own
+    /// authored visual timing, transforms, alpha, layering/blending, sprite changes, and curves.
+    /// Runtime destination movement remains a separate presentation concern because its endpoint is authoritative data.
     /// </summary>
     public sealed class DiceView : MonoBehaviour, IPointerPresentationTarget
     {
@@ -20,9 +21,8 @@ namespace Decay
         [Header("Pointer Presentation")]
         [Tooltip("Presentation-only hover state. Gameplay availability is still decided by authoritative interaction gates.")]
         [SerializeField] private AnimatorBoolPresentationBinding _hoverPresentation = new AnimatorBoolPresentationBinding();
-        [Tooltip("Optional decorative press response. It does not approve movement, selection, or any other gameplay request.")]
+        [Tooltip("Optional authored decorative press response. It does not approve movement, selection, or any other gameplay request.")]
         [SerializeField] private AnimatorTriggerPresentationBinding _decorativePressPresentation = new AnimatorTriggerPresentationBinding();
-        [SerializeField] private ProceduralTransformPresentationBinding _decorativePressMotion = new ProceduralTransformPresentationBinding();
 
         [Header("Authored One-Shot Presentation")]
         [SerializeField] private AnimatorTriggerPresentationBinding _enemySetupPresentation = new AnimatorTriggerPresentationBinding();
@@ -34,21 +34,8 @@ namespace Decay
         [SerializeField] private AnimatorTriggerPresentationBinding _checkedPresentation = new AnimatorTriggerPresentationBinding();
         [SerializeField] private AnimatorTriggerPresentationBinding _scorePresentation = new AnimatorTriggerPresentationBinding();
         [SerializeField] private AnimatorTriggerPresentationBinding _resetPresentation = new AnimatorTriggerPresentationBinding();
-        [Tooltip("Optional authored response used after a destination movement such as a board swap or enemy population.")]
+        [Tooltip("Optional authored response used after runtime destination movement such as a board swap or enemy population.")]
         [SerializeField] private AnimatorTriggerPresentationBinding _settlePresentation = new AnimatorTriggerPresentationBinding();
-
-        [Header("Optional Procedural Layers")]
-        [Tooltip("Each layer is entirely Inspector-authored. Leave it empty for Animator-only presentation.")]
-        [SerializeField] private ProceduralTransformPresentationBinding _enemySetupMotion = new ProceduralTransformPresentationBinding();
-        [SerializeField] private ProceduralTransformPresentationBinding _rollMotion = new ProceduralTransformPresentationBinding();
-        [SerializeField] private ProceduralTransformPresentationBinding _faceRevealMotion = new ProceduralTransformPresentationBinding();
-        [SerializeField] private ProceduralTransformPresentationBinding _decayMotion = new ProceduralTransformPresentationBinding();
-        [SerializeField] private ProceduralTransformPresentationBinding _savedMotion = new ProceduralTransformPresentationBinding();
-        [SerializeField] private ProceduralTransformPresentationBinding _saviorMotion = new ProceduralTransformPresentationBinding();
-        [SerializeField] private ProceduralTransformPresentationBinding _checkedMotion = new ProceduralTransformPresentationBinding();
-        [SerializeField] private ProceduralTransformPresentationBinding _scoreMotion = new ProceduralTransformPresentationBinding();
-        [SerializeField] private ProceduralTransformPresentationBinding _resetMotion = new ProceduralTransformPresentationBinding();
-        [SerializeField] private ProceduralTransformPresentationBinding _settleMotion = new ProceduralTransformPresentationBinding();
 
         [Header("Predictive Presentation")]
         [SerializeField] private AnimatorBoolPresentationBinding _targetedPresentation = new AnimatorBoolPresentationBinding();
@@ -62,17 +49,16 @@ namespace Decay
         private DiceInstanceId _diceId;
         private DicePresentationDestination _presentationDestination;
         private bool _hasPresentationDestination;
-        private HybridOneShotPresentationRun _decorativePressRun;
-        private HybridOneShotPresentationRun _enemySetupRun;
-        private HybridOneShotPresentationRun _rollRun;
-        private HybridOneShotPresentationRun _faceRevealRun;
-        private HybridOneShotPresentationRun _decayRun;
-        private HybridOneShotPresentationRun _savedRun;
-        private HybridOneShotPresentationRun _saviorRun;
-        private HybridOneShotPresentationRun _checkedRun;
-        private HybridOneShotPresentationRun _scoreRun;
-        private HybridOneShotPresentationRun _resetRun;
-        private HybridOneShotPresentationRun _settleRun;
+        private Action _enemySetupCompletion;
+        private Action _rollCompletion;
+        private Action _faceRevealCompletion;
+        private Action _decayCompletion;
+        private Action _savedCompletion;
+        private Action _saviorCompletion;
+        private Action _checkedCompletion;
+        private Action _scoreCompletion;
+        private Action _resetCompletion;
+        private Action _settleCompletion;
 
         public DiceInstanceId DiceId => _diceId;
         public bool IsBound => _diceId.IsValid;
@@ -93,7 +79,6 @@ namespace Decay
             if (!_reconcilePresentation.TryValidate($"{name} Reconcile", out error)
                 || !_hoverPresentation.TryValidate($"{name} Hover", out error)
                 || !_decorativePressPresentation.TryValidate($"{name} Decorative Press", out error)
-                || !_decorativePressMotion.TryValidate($"{name} Decorative Press Motion", out error)
                 || !_enemySetupPresentation.TryValidate($"{name} Enemy Setup", out error)
                 || !_rollPresentation.TryValidate($"{name} Roll", out error)
                 || !_faceRevealPresentation.TryValidate($"{name} Face Reveal", out error)
@@ -104,16 +89,6 @@ namespace Decay
                 || !_scorePresentation.TryValidate($"{name} Score", out error)
                 || !_resetPresentation.TryValidate($"{name} Reset", out error)
                 || !_settlePresentation.TryValidate($"{name} Settle", out error)
-                || !_enemySetupMotion.TryValidate($"{name} Enemy Setup Motion", out error)
-                || !_rollMotion.TryValidate($"{name} Roll Motion", out error)
-                || !_faceRevealMotion.TryValidate($"{name} Face Reveal Motion", out error)
-                || !_decayMotion.TryValidate($"{name} Decay Motion", out error)
-                || !_savedMotion.TryValidate($"{name} Saved Motion", out error)
-                || !_saviorMotion.TryValidate($"{name} Savior Motion", out error)
-                || !_checkedMotion.TryValidate($"{name} Checked Motion", out error)
-                || !_scoreMotion.TryValidate($"{name} Score Motion", out error)
-                || !_resetMotion.TryValidate($"{name} Reset Motion", out error)
-                || !_settleMotion.TryValidate($"{name} Settle Motion", out error)
                 || !_targetedPresentation.TryValidate($"{name} Targeted", out error)
                 || !_willDecayPresentation.TryValidate($"{name} WillDecay", out error)
                 || !_saveSourcePresentation.TryValidate($"{name} Save Source", out error))
@@ -197,26 +172,16 @@ namespace Decay
 
         internal void SetPreviewWorldPosition(Vector3 worldPosition) => transform.position = worldPosition;
 
-        internal void PlayEnemySetupPresentation(Action onCompleted) =>
-            StartHybrid(_enemySetupPresentation, _enemySetupMotion, ref _enemySetupRun, onCompleted);
-        internal void PlayRollPresentation(Action onCompleted) =>
-            StartHybrid(_rollPresentation, _rollMotion, ref _rollRun, onCompleted);
-        internal void PlayFaceRevealPresentation(Action onCompleted) =>
-            StartHybrid(_faceRevealPresentation, _faceRevealMotion, ref _faceRevealRun, onCompleted);
-        internal void PlayDecayPresentation(Action onCompleted) =>
-            StartHybrid(_decayPresentation, _decayMotion, ref _decayRun, onCompleted);
-        internal void PlaySavedPresentation(Action onCompleted) =>
-            StartHybrid(_savedPresentation, _savedMotion, ref _savedRun, onCompleted);
-        internal void PlaySaviorPresentation(Action onCompleted) =>
-            StartHybrid(_saviorPresentation, _saviorMotion, ref _saviorRun, onCompleted);
-        internal void PlayCheckedPresentation(Action onCompleted) =>
-            StartHybrid(_checkedPresentation, _checkedMotion, ref _checkedRun, onCompleted);
-        internal void PlayScorePresentation(Action onCompleted) =>
-            StartHybrid(_scorePresentation, _scoreMotion, ref _scoreRun, onCompleted);
-        internal void PlayResetPresentation(Action onCompleted) =>
-            StartHybrid(_resetPresentation, _resetMotion, ref _resetRun, onCompleted);
-        internal void PlaySettlePresentation(Action onCompleted) =>
-            StartHybrid(_settlePresentation, _settleMotion, ref _settleRun, onCompleted);
+        internal void PlayEnemySetupPresentation(Action onCompleted) => StartAuthoredPresentation(_enemySetupPresentation, ref _enemySetupCompletion, onCompleted);
+        internal void PlayRollPresentation(Action onCompleted) => StartAuthoredPresentation(_rollPresentation, ref _rollCompletion, onCompleted);
+        internal void PlayFaceRevealPresentation(Action onCompleted) => StartAuthoredPresentation(_faceRevealPresentation, ref _faceRevealCompletion, onCompleted);
+        internal void PlayDecayPresentation(Action onCompleted) => StartAuthoredPresentation(_decayPresentation, ref _decayCompletion, onCompleted);
+        internal void PlaySavedPresentation(Action onCompleted) => StartAuthoredPresentation(_savedPresentation, ref _savedCompletion, onCompleted);
+        internal void PlaySaviorPresentation(Action onCompleted) => StartAuthoredPresentation(_saviorPresentation, ref _saviorCompletion, onCompleted);
+        internal void PlayCheckedPresentation(Action onCompleted) => StartAuthoredPresentation(_checkedPresentation, ref _checkedCompletion, onCompleted);
+        internal void PlayScorePresentation(Action onCompleted) => StartAuthoredPresentation(_scorePresentation, ref _scoreCompletion, onCompleted);
+        internal void PlayResetPresentation(Action onCompleted) => StartAuthoredPresentation(_resetPresentation, ref _resetCompletion, onCompleted);
+        internal void PlaySettlePresentation(Action onCompleted) => StartAuthoredPresentation(_settlePresentation, ref _settleCompletion, onCompleted);
 
         internal void PlayEffectPresentation(EffectPresentationRequest request, Action onCompleted)
         {
@@ -243,40 +208,53 @@ namespace Decay
 
         internal void ClearPredictiveDecayPresentation() => SetPredictiveDecayPresentation(false, false, false);
 
-        internal void CancelEnemySetupPresentation() => CancelRun(ref _enemySetupRun);
-        internal void CancelRollPresentation() => CancelRun(ref _rollRun);
-        internal void CancelFaceRevealPresentation() => CancelRun(ref _faceRevealRun);
+        internal void CancelEnemySetupPresentation()
+        {
+            _enemySetupCompletion = null;
+            _enemySetupPresentation.Cancel();
+        }
+
+        internal void CancelRollPresentation()
+        {
+            _rollCompletion = null;
+            _rollPresentation.Cancel();
+        }
+
+        internal void CancelFaceRevealPresentation()
+        {
+            _faceRevealCompletion = null;
+            _faceRevealPresentation.Cancel();
+        }
 
         internal void CancelAllPresentation()
         {
-            CancelRun(ref _decorativePressRun);
-            CancelRun(ref _enemySetupRun);
-            CancelRun(ref _rollRun);
-            CancelRun(ref _faceRevealRun);
-            CancelRun(ref _decayRun);
-            CancelRun(ref _savedRun);
-            CancelRun(ref _saviorRun);
-            CancelRun(ref _checkedRun);
-            CancelRun(ref _scoreRun);
-            CancelRun(ref _resetRun);
-            CancelRun(ref _settleRun);
+            _decorativePressPresentation.Cancel();
+            CancelEnemySetupPresentation();
+            CancelRollPresentation();
+            CancelFaceRevealPresentation();
+            CancelOneShot(_decayPresentation, ref _decayCompletion);
+            CancelOneShot(_savedPresentation, ref _savedCompletion);
+            CancelOneShot(_saviorPresentation, ref _saviorCompletion);
+            CancelOneShot(_checkedPresentation, ref _checkedCompletion);
+            CancelOneShot(_scorePresentation, ref _scoreCompletion);
+            CancelOneShot(_resetPresentation, ref _resetCompletion);
+            CancelOneShot(_settlePresentation, ref _settleCompletion);
             for (int i = 0; i < _effectPresentations.Count; i++)
                 _effectPresentations[i]?.CancelAll();
             _hoverPresentation.SetActive(false);
             ClearPredictiveDecayPresentation();
         }
 
-        public void NotifyDecorativePressPresentationComplete() => CompleteAuthored(ref _decorativePressRun);
-        public void NotifyEnemySetupPresentationComplete() => CompleteAuthored(ref _enemySetupRun);
-        public void NotifyRollPresentationComplete() => CompleteAuthored(ref _rollRun);
-        public void NotifyFaceRevealPresentationComplete() => CompleteAuthored(ref _faceRevealRun);
-        public void NotifyDecayPresentationComplete() => CompleteAuthored(ref _decayRun);
-        public void NotifySavedPresentationComplete() => CompleteAuthored(ref _savedRun);
-        public void NotifySaviorPresentationComplete() => CompleteAuthored(ref _saviorRun);
-        public void NotifyCheckedPresentationComplete() => CompleteAuthored(ref _checkedRun);
-        public void NotifyScorePresentationComplete() => CompleteAuthored(ref _scoreRun);
-        public void NotifyResetPresentationComplete() => CompleteAuthored(ref _resetRun);
-        public void NotifySettlePresentationComplete() => CompleteAuthored(ref _settleRun);
+        public void NotifyEnemySetupPresentationComplete() => CompleteOneShot(ref _enemySetupCompletion);
+        public void NotifyRollPresentationComplete() => CompleteOneShot(ref _rollCompletion);
+        public void NotifyFaceRevealPresentationComplete() => CompleteOneShot(ref _faceRevealCompletion);
+        public void NotifyDecayPresentationComplete() => CompleteOneShot(ref _decayCompletion);
+        public void NotifySavedPresentationComplete() => CompleteOneShot(ref _savedCompletion);
+        public void NotifySaviorPresentationComplete() => CompleteOneShot(ref _saviorCompletion);
+        public void NotifyCheckedPresentationComplete() => CompleteOneShot(ref _checkedCompletion);
+        public void NotifyScorePresentationComplete() => CompleteOneShot(ref _scoreCompletion);
+        public void NotifyResetPresentationComplete() => CompleteOneShot(ref _resetCompletion);
+        public void NotifySettlePresentationComplete() => CompleteOneShot(ref _settleCompletion);
 
         /// <summary>Animation Event endpoint. The key is editor-authored on the matching effect presentation binding.</summary>
         public void NotifyEffectPresentationComplete(string completionKey)
@@ -294,11 +272,9 @@ namespace Decay
             _interactionCollider = interactionCollider;
         }
 
-        void IPointerPresentationTarget.SetPointerHovered(bool isHovered) =>
-            _hoverPresentation.SetActive(isHovered);
+        void IPointerPresentationTarget.SetPointerHovered(bool isHovered) => _hoverPresentation.SetActive(isHovered);
 
-        void IPointerPresentationTarget.PlayPointerPressPresentation() =>
-            StartHybrid(_decorativePressPresentation, _decorativePressMotion, ref _decorativePressRun, null);
+        void IPointerPresentationTarget.PlayPointerPressPresentation() => _decorativePressPresentation.Play();
 
         private EffectPresentationBinding FindEffectBinding(EffectId effectId, PresentationChannel channel)
         {
@@ -322,25 +298,28 @@ namespace Decay
                 _interactionCollider = GetComponent<Collider>();
         }
 
-        private void StartHybrid(
-            AnimatorTriggerPresentationBinding authored,
-            ProceduralTransformPresentationBinding procedural,
-            ref HybridOneShotPresentationRun run,
-            Action onCompleted)
+        private static void StartAuthoredPresentation(AnimatorTriggerPresentationBinding binding, ref Action pendingCompletion, Action onCompleted)
         {
-            CancelRun(ref run);
-            run = HybridOneShotPresentationRun.Start(this, authored, procedural, onCompleted);
+            pendingCompletion = null;
+            if (!binding.Play())
+            {
+                onCompleted?.Invoke();
+                return;
+            }
+            pendingCompletion = onCompleted;
         }
 
-        private static void CancelRun(ref HybridOneShotPresentationRun run)
+        private static void CancelOneShot(AnimatorTriggerPresentationBinding binding, ref Action pendingCompletion)
         {
-            run?.Cancel();
-            run = null;
+            pendingCompletion = null;
+            binding.Cancel();
         }
 
-        private static void CompleteAuthored(ref HybridOneShotPresentationRun run)
+        private static void CompleteOneShot(ref Action pendingCompletion)
         {
-            run?.NotifyAuthoredComplete();
+            Action callback = pendingCompletion;
+            pendingCompletion = null;
+            callback?.Invoke();
         }
 
         private void RequireConfigured()
