@@ -15,6 +15,7 @@ namespace Decay
         private readonly PresentationCompletionBarrier _completionBarrier;
         private Action _authoredCompletion;
         private bool _cancelled;
+        private bool _completed;
 
         private HybridOneShotPresentationRun(
             AnimatorTriggerPresentationBinding authoredPresentation,
@@ -23,7 +24,12 @@ namespace Decay
         {
             _authoredPresentation = authoredPresentation;
             _proceduralPresentation = proceduralPresentation;
-            _completionBarrier = new PresentationCompletionBarrier(onCompleted ?? (() => { }));
+            _completionBarrier = new PresentationCompletionBarrier(() =>
+            {
+                _completed = true;
+                _authoredCompletion = null;
+                onCompleted?.Invoke();
+            });
         }
 
         internal static HybridOneShotPresentationRun Start(
@@ -67,7 +73,7 @@ namespace Decay
 
         internal void NotifyAuthoredComplete()
         {
-            if (_cancelled)
+            if (_cancelled || _completed)
                 return;
 
             Action completion = _authoredCompletion;
@@ -77,7 +83,7 @@ namespace Decay
 
         internal void Cancel()
         {
-            if (_cancelled)
+            if (_cancelled || _completed)
                 return;
 
             _cancelled = true;
