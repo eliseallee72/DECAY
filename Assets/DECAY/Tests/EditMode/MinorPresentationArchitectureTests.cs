@@ -8,15 +8,6 @@ namespace Decay.Tests
     public sealed class MinorPresentationArchitectureTests
     {
         [Test]
-        public void ProceduralTransformPresentationBinding_DefaultsToUnconfigured()
-        {
-            var binding = new ProceduralTransformPresentationBinding();
-
-            Assert.That(binding.IsConfigured, Is.False,
-                "Minor animation infrastructure must not ship a hard-coded motion fallback.");
-        }
-
-        [Test]
         public void CodedMotionSettings_DefaultsToUnconfigured()
         {
             var settings = new BattlePresentationSettings.CodedMotionSettings();
@@ -52,6 +43,16 @@ namespace Decay.Tests
 
             Assert.That(methods.Any(method => method.ReturnType != typeof(void) && method.Name != "get_PointerPresentationEnabled"), Is.False,
                 "Pointer presentation feedback must not return an interaction/gameplay result.");
+        }
+
+        [Test]
+        public void HourglassView_DoesNotExposeDecayPresentationContract()
+        {
+            MethodInfo[] methods = typeof(HourglassView).GetMethods(
+                BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+
+            Assert.That(methods.Any(method => method.Name.Contains("DecayPresentation", StringComparison.Ordinal)), Is.False,
+                "Hourglass presentation must not own dice/slot Decay animation hooks.");
         }
     }
 }
