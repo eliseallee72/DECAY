@@ -2,6 +2,7 @@ using System;
 using System.Linq;
 using System.Reflection;
 using NUnit.Framework;
+using UnityEngine;
 
 namespace Decay.Tests
 {
@@ -14,6 +15,15 @@ namespace Decay.Tests
 
             Assert.That(settings.IsConfigured, Is.False,
                 "Destination movement requires editor-authored duration and easing before it may animate.");
+        }
+
+        [Test]
+        public void RollStartOffsetRange_DefaultsToNoDelay()
+        {
+            var settings = new BattlePresentationSettings();
+
+            Assert.That(settings.RollStartOffsetRange, Is.EqualTo(Vector2.zero),
+                "Minor Roll staggering must remain opt-in editor tuning rather than a hard-coded visual default.");
         }
 
         [Test]
@@ -53,6 +63,17 @@ namespace Decay.Tests
 
             Assert.That(methods.Any(method => method.Name.IndexOf("DecayPresentation", StringComparison.Ordinal) >= 0), Is.False,
                 "Hourglass presentation must not own dice/slot Decay animation hooks.");
+        }
+
+        [Test]
+        public void HourglassView_DoesNotOwnBattleAuthorityObjects()
+        {
+            FieldInfo[] fields = typeof(HourglassView).GetFields(
+                BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+
+            Assert.That(fields.Any(field => typeof(BattleController).IsAssignableFrom(field.FieldType)), Is.False);
+            Assert.That(fields.Any(field => typeof(BattleState).IsAssignableFrom(field.FieldType)), Is.False,
+                "Hourglass interaction availability may reflect authoritative phase but must not own battle authority.");
         }
     }
 }
