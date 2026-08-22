@@ -6,9 +6,9 @@ namespace Decay
 {
     /// <summary>
     /// Hourglass input/presentation surface. Pointer input only raises an interaction request; authoritative battle flow
-    /// decides what that request means. Authored Animator state then reflects the authoritative phase/result.
+    /// decides what that request means. Authored and optional procedural presentation then reflect that authoritative result.
     /// </summary>
-    public sealed class HourglassView : MonoBehaviour
+    public sealed class HourglassView : MonoBehaviour, IPointerPresentationTarget
     {
         [Header("Event-Driven Pointer Input")]
         [SerializeField] private Camera _camera;
@@ -21,17 +21,26 @@ namespace Decay
         [SerializeField] private AnimatorIntPresentationBinding _phasePresentation = new AnimatorIntPresentationBinding();
         [Tooltip("Optional trigger used after cancellation/reconciliation to return to the persistent phase state.")]
         [SerializeField] private AnimatorTriggerPresentationBinding _reconcilePresentation = new AnimatorTriggerPresentationBinding();
+        [Tooltip("Presentation-only hover state. This does not imply the hourglass interaction will be accepted.")]
+        [SerializeField] private AnimatorBoolPresentationBinding _hoverPresentation = new AnimatorBoolPresentationBinding();
 
         [Header("Authored One-Shot Presentation")]
         [SerializeField] private AnimatorTriggerPresentationBinding _rollToRepositionPresentation = new AnimatorTriggerPresentationBinding();
         [SerializeField] private AnimatorTriggerPresentationBinding _decayPresentation = new AnimatorTriggerPresentationBinding();
         [SerializeField] private AnimatorTriggerPresentationBinding _resetToSetupPresentation = new AnimatorTriggerPresentationBinding();
 
+        [Header("Optional Procedural Layers")]
+        [SerializeField] private ProceduralTransformPresentationBinding _rollToRepositionMotion = new ProceduralTransformPresentationBinding();
+        [SerializeField] private ProceduralTransformPresentationBinding _decayMotion = new ProceduralTransformPresentationBinding();
+        [SerializeField] private ProceduralTransformPresentationBinding _resetToSetupMotion = new ProceduralTransformPresentationBinding();
+
         private InputAction _pressAction;
         private Action _interactionRequested;
-        private Action _rollCompletion;
-        private Action _decayCompletion;
-        private Action _resetCompletion;
+        private HybridOneShotPresentationRun _rollRun;
+        private HybridOneShotPresentationRun _decayRun;
+        private HybridOneShotPresentationRun _resetRun;
+
+        bool IPointerPresentationTarget.PointerPresentationEnabled => isActiveAndEnabled;
 
         public bool TryValidate(out string error)
         {
@@ -52,9 +61,13 @@ namespace Decay
             }
             if (!_phasePresentation.TryValidate($"{name} Phase", out error)
                 || !_reconcilePresentation.TryValidate($"{name} Reconcile", out error)
+                || !_hoverPresentation.TryValidate($"{name} Hover", out error)
                 || !_rollToRepositionPresentation.TryValidate($"{name} Roll Presentation", out error)
                 || !_decayPresentation.TryValidate($"{name} Decay Presentation", out error)
-                || !_resetToSetupPresentation.TryValidate($"{name} Reset Presentation", out error))
+                || !_resetToSetupPresentation.TryValidate($"{name} Reset Presentation", out error)
+                || !_rollToRepositionMotion.TryValidate($"{name} Roll Motion", out error)
+                || !_decayMotion.TryValidate($"{name} Decay Motion", out error)
+                || !_resetToSetupMotion.TryValidate($"{name} Reset Motion", out error))
                 return false;
 
             error = string.Empty;
@@ -80,40 +93,44 @@ namespace Decay
         }
 
         internal void PlayRollPresentation(Action onCompleted) =>
-            StartAuthoredPresentation(_rollToRepositionPresentation, ref _rollCompletion, onCompleted);
+            StartHybrid(_rollToRepositionPresentation, _rollToRepositionMotion, ref _rollRun, onCompleted);
 
         internal void PlayDecayPresentation(Action onCompleted) =>
-            StartAuthoredPresentation(_decayPresentation, ref _decayCompletion, onCompleted);
+            StartHybrid(_decayPresentation, _decayMotion, ref _decayRun, onCompleted);
 
         internal void PlayResetPresentation(Action onCompleted) =>
-            StartAuthoredPresentation(_resetToSetupPresentation, ref _resetCompletion, onCompleted);
+            StartHybrid(_resetToSetupPresentation, _resetToSetupMotion, ref _resetRun, onCompleted);
 
         /// <summary>
         /// Public editor/test endpoint for any alternate input surface. It only requests interaction; it never advances flow.
         /// </summary>
         public void NotifyInteractionRequested() => _interactionRequested?.Invoke();
 
-        public void NotifyRollPresentationComplete() => CompleteOneShot(ref _rollCompletion);
-        public void NotifyDecayPresentationComplete() => CompleteOneShot(ref _decayCompletion);
-        public void NotifyResetPresentationComplete() => CompleteOneShot(ref _resetCompletion);
+        public void NotifyRollPresentationComplete() => _rollRun?.NotifyAuthoredComplete();
+        public void NotifyDecayPresentationComplete() => _decayRun?.NotifyAuthoredComplete();
+        public void NotifyResetPresentationComplete() => _resetRun?.NotifyAuthoredComplete();
 
-        internal void CancelRollPresentation()
-        {
-            _rollCompletion = null;
-            _rollToRepositionPresentation.Cancel();
-        }
+        internal void CancelRollPresentation() => CancelRun(ref _rollRun);
 
         internal void CancelAllPresentation()
         {
-            CancelRollPresentation();
-            CancelOneShot(_decayPresentation, ref _decayCompletion);
-            CancelOneShot(_resetToSetupPresentation, ref _resetCompletion);
+            CancelRun(ref _rollRun);
+            CancelRun(ref _decayRun);
+            CancelRun(ref _resetRun);
+            _hoverPresentation.SetActive(false);
         }
 
         internal void ConfigureForTests(Camera camera, Collider interactionCollider)
         {
             _camera = camera;
             _interactionCollider = interactionCollider;
+        }
+
+        void IPointerPresentationTarget.SetPointerHovered(bool isHovered) => _hoverPresentation.SetActive(isHovered);
+
+        // The hourglass already has a functional click request. Decorative press feedback is intentionally not duplicated here.
+        void IPointerPresentationTarget.PlayPointerPressPresentation()
+        {
         }
 
         private void OnEnable()
@@ -150,31 +167,20 @@ namespace Decay
                 NotifyInteractionRequested();
         }
 
-        private static void StartAuthoredPresentation(
-            AnimatorTriggerPresentationBinding binding,
-            ref Action pendingCompletion,
+        private void StartHybrid(
+            AnimatorTriggerPresentationBinding authored,
+            ProceduralTransformPresentationBinding procedural,
+            ref HybridOneShotPresentationRun run,
             Action onCompleted)
         {
-            pendingCompletion = null;
-            if (!binding.Play())
-            {
-                onCompleted?.Invoke();
-                return;
-            }
-            pendingCompletion = onCompleted;
+            CancelRun(ref run);
+            run = HybridOneShotPresentationRun.Start(this, authored, procedural, onCompleted);
         }
 
-        private static void CancelOneShot(AnimatorTriggerPresentationBinding binding, ref Action pendingCompletion)
+        private static void CancelRun(ref HybridOneShotPresentationRun run)
         {
-            pendingCompletion = null;
-            binding.Cancel();
-        }
-
-        private static void CompleteOneShot(ref Action pendingCompletion)
-        {
-            Action callback = pendingCompletion;
-            pendingCompletion = null;
-            callback?.Invoke();
+            run?.Cancel();
+            run = null;
         }
     }
 }
