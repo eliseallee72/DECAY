@@ -43,6 +43,7 @@ namespace Decay
 
         private BattleRuntime _runtime;
         private BattleDiceViewCoordinator _viewCoordinator;
+        private BattleDiceMovementPresenter _movementPresenter;
 
         public bool IsInitialized => _runtime != null;
         public BattleRuntime Runtime => _runtime ?? throw new InvalidOperationException("BattleCompositionRoot has not been initialized.");
@@ -102,6 +103,7 @@ namespace Decay
             if (_presentationDirector != null)
             {
                 _presentationDirector.Bind(runtime, _viewCoordinator, _diceLayout, HandleHourglassInteraction);
+                _movementPresenter = new BattleDiceMovementPresenter(this, _viewCoordinator, _presentationDirector.Settings);
                 _presentationDirector.PresentEnemySetup(initialEnemySetup);
             }
         }
@@ -111,9 +113,15 @@ namespace Decay
             MoveDiceResult result = Runtime.MoveDiceController.RequestMove(
                 new MoveDiceRequest(Side.Player, diceId, target));
 
-            // Until the coded movement pass is implemented, movement uses the explicit hard-reconcile fallback.
-            // The destination/rendered-transform separation is already in place so later motion will replace this
-            // snap without changing BoardState or semantic location ownership.
+            // Authority resolves the semantic move first. Presentation may then travel toward the newly resolved scene
+            // anchors without changing BoardState or inventory ownership. Unsupported/later-pass moves hard reconcile.
+            if (result.IsApproved && _movementPresenter != null && _movementPresenter.TryPresent(result))
+            {
+                if (Runtime.BattleState.CurrentPhase == BattlePhase.PlayerReposition)
+                    _presentationDirector?.PresentPredictiveDecayPreview(Runtime.BattleController.ResolveDecayPreview());
+                return result;
+            }
+
             ReconcilePresentation();
             return result;
         }
@@ -207,7 +215,6 @@ namespace Decay
             _presentationDirector = presentationDirector;
         }
 
-
         private void HandleHourglassInteraction()
         {
             if (!IsInitialized)
@@ -234,6 +241,10 @@ namespace Decay
                 return;
             }
 
+            // Any still-rendering accepted move is presentation-only. Resolve it to the already-authoritative semantic
+            // destination before Roll visuals begin rather than letting two presentation states compete.
+            _movementPresenter?.CancelAndReconcile();
+
             if (_presentationDirector != null)
             {
                 _presentationDirector.PresentRoll(rollResult, CompleteRollAfterPresentation);
@@ -254,7 +265,7 @@ namespace Decay
             }
 
             // Enemy decision/reposition authority will be inserted here when that gameplay planner is implemented.
-            // Pass 1.1 only exposes the cue/completion seam; actual swap motion is intentionally deferred.
+            // This pass exposes the cue/completion and movement seams without inventing enemy decisions in presentation.
             ReconcilePresentation();
             if (_presentationDirector != null)
                 _presentationDirector.PresentEnemyReposition(CompleteEnemyRepositionAfterPresentation);
@@ -280,6 +291,7 @@ namespace Decay
                 return;
             }
 
+            _movementPresenter?.CancelAndReconcile();
             _presentationDirector?.ClearPredictiveDecayPresentation();
 
             // Decay/Score/Reset authored sequencing belongs to the next visual pass. For now the existing bare-playable
@@ -310,6 +322,9 @@ namespace Decay
 
         private void ReconcilePresentation()
         {
+            if (_movementPresenter != null && _movementPresenter.HasActiveMotion)
+                _movementPresenter.CancelAndReconcile();
+
             if (_presentationDirector != null)
                 _presentationDirector.ReconcileAuthoritativeState();
             else

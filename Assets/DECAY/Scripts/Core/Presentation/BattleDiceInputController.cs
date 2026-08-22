@@ -5,9 +5,10 @@ using UnityEngine.InputSystem;
 namespace Decay
 {
     /// <summary>
-    /// World-space pointer adapter for Player dice drag/drop. Press/release are event-driven Input System callbacks;
-    /// Update is reserved only for the genuinely continuous pointer-following portion of an active drag.
-    /// Releasing creates a normal MoveDiceRequest and authoritative Gates decide the result.
+    /// World-space pointer adapter for Player dice drag/drop and presentation-only pointer feedback.
+    /// Press/release and hover are event-driven Input System callbacks; Update is reserved only for the genuinely
+    /// continuous pointer-following portion of an active drag. Releasing creates a normal MoveDiceRequest and
+    /// authoritative Gates decide the result.
     /// </summary>
     public sealed class BattleDiceInputController : MonoBehaviour
     {
@@ -15,6 +16,8 @@ namespace Decay
         [SerializeField] private LayerMask _raycastMask = ~0;
         [Tooltip("Input System binding used to begin/end a drag. Stored as editor data rather than polled every frame.")]
         [SerializeField] private string _dragPressBindingPath = "<Mouse>/leftButton";
+        [Tooltip("Input System pointer-position binding used to refresh hover presentation without per-object Update polling.")]
+        [SerializeField] private string _pointerPositionBindingPath = "<Pointer>/position";
         [Tooltip("Editor-authored surface whose local Up defines drag-plane normal and lift direction in the skewed 2.5D scene.")]
         [SerializeField] private Transform _dragSurface;
         [SerializeField] private float _dragLift = 0.08f;
@@ -26,6 +29,8 @@ namespace Decay
         private Plane _dragPlane;
         private Vector3 _dragOffset;
         private InputAction _dragPressAction;
+        private InputAction _pointerPositionAction;
+        private IPointerPresentationTarget _hoveredPresentationTarget;
 
         public bool TryValidate(out string error)
         {
@@ -37,6 +42,11 @@ namespace Decay
             if (string.IsNullOrWhiteSpace(_dragPressBindingPath))
             {
                 error = $"{name}: BattleDiceInputController requires an Input System drag press binding path.";
+                return false;
+            }
+            if (string.IsNullOrWhiteSpace(_pointerPositionBindingPath))
+            {
+                error = $"{name}: BattleDiceInputController requires an Input System pointer position binding path.";
                 return false;
             }
             if (_dragSurface == null)
@@ -70,13 +80,21 @@ namespace Decay
 
         private void OnEnable()
         {
-            if (string.IsNullOrWhiteSpace(_dragPressBindingPath))
-                return;
+            if (!string.IsNullOrWhiteSpace(_dragPressBindingPath))
+            {
+                _dragPressAction = new InputAction($"{name}_DragPress", InputActionType.Button, _dragPressBindingPath);
+                _dragPressAction.started += OnDragPressStarted;
+                _dragPressAction.canceled += OnDragPressCanceled;
+                _dragPressAction.Enable();
+            }
 
-            _dragPressAction = new InputAction($"{name}_DragPress", InputActionType.Button, _dragPressBindingPath);
-            _dragPressAction.started += OnDragPressStarted;
-            _dragPressAction.canceled += OnDragPressCanceled;
-            _dragPressAction.Enable();
+            if (!string.IsNullOrWhiteSpace(_pointerPositionBindingPath))
+            {
+                _pointerPositionAction = new InputAction($"{name}_PointerPosition", InputActionType.PassThrough, _pointerPositionBindingPath);
+                _pointerPositionAction.performed += OnPointerPositionChanged;
+                _pointerPositionAction.canceled += OnPointerPositionChanged;
+                _pointerPositionAction.Enable();
+            }
         }
 
         private void OnDisable()
@@ -89,6 +107,17 @@ namespace Decay
                 _dragPressAction.Dispose();
                 _dragPressAction = null;
             }
+
+            if (_pointerPositionAction != null)
+            {
+                _pointerPositionAction.performed -= OnPointerPositionChanged;
+                _pointerPositionAction.canceled -= OnPointerPositionChanged;
+                _pointerPositionAction.Disable();
+                _pointerPositionAction.Dispose();
+                _pointerPositionAction = null;
+            }
+
+            SetHoveredPresentationTarget(null);
 
             if (_draggedView != null)
             {
@@ -105,11 +134,23 @@ namespace Decay
             UpdateDrag(Pointer.current.position.ReadValue());
         }
 
+        private void OnPointerPositionChanged(InputAction.CallbackContext context)
+        {
+            if (_camera == null)
+                return;
+
+            UpdatePointerPresentation(context.ReadValue<Vector2>());
+        }
+
         private void OnDragPressStarted(InputAction.CallbackContext context)
         {
             if (_compositionRoot == null || Pointer.current == null)
                 return;
-            TryBeginDrag(Pointer.current.position.ReadValue());
+
+            Vector2 screenPosition = Pointer.current.position.ReadValue();
+            UpdatePointerPresentation(screenPosition);
+            _hoveredPresentationTarget?.PlayPointerPressPresentation();
+            TryBeginDrag(screenPosition);
         }
 
         private void OnDragPressCanceled(InputAction.CallbackContext context)
@@ -117,6 +158,46 @@ namespace Decay
             if (_draggedView == null || Pointer.current == null)
                 return;
             CompleteDrag(Pointer.current.position.ReadValue());
+        }
+
+        private void UpdatePointerPresentation(Vector2 screenPosition)
+        {
+            SetHoveredPresentationTarget(TryResolvePointerPresentationTarget(screenPosition, out IPointerPresentationTarget target)
+                ? target
+                : null);
+        }
+
+        private bool TryResolvePointerPresentationTarget(Vector2 screenPosition, out IPointerPresentationTarget target)
+        {
+            Ray ray = _camera.ScreenPointToRay(screenPosition);
+            RaycastHit[] hits = Physics.RaycastAll(ray, _camera.farClipPlane, _raycastMask, QueryTriggerInteraction.Collide);
+            Array.Sort(hits, (left, right) => left.distance.CompareTo(right.distance));
+
+            for (int i = 0; i < hits.Length; i++)
+            {
+                MonoBehaviour[] behaviours = hits[i].collider.GetComponentsInParent<MonoBehaviour>(true);
+                for (int j = 0; j < behaviours.Length; j++)
+                {
+                    if (behaviours[j] is IPointerPresentationTarget candidate && candidate.PointerPresentationEnabled)
+                    {
+                        target = candidate;
+                        return true;
+                    }
+                }
+            }
+
+            target = null;
+            return false;
+        }
+
+        private void SetHoveredPresentationTarget(IPointerPresentationTarget target)
+        {
+            if (ReferenceEquals(_hoveredPresentationTarget, target))
+                return;
+
+            _hoveredPresentationTarget?.SetPointerHovered(false);
+            _hoveredPresentationTarget = target;
+            _hoveredPresentationTarget?.SetPointerHovered(true);
         }
 
         private void TryBeginDrag(Vector2 screenPosition)

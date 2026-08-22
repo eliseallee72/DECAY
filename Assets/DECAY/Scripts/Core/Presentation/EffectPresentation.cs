@@ -49,6 +49,7 @@ namespace Decay
     /// <summary>
     /// Editor-authored mapping for one EffectId + presentation channel. Multiple entries on one DiceView may be active
     /// independently, allowing effect presentations to overlap or queue without collapsing every effect into one state.
+    /// The owning DiceView supplies its single shared Animator.
     /// </summary>
     [Serializable]
     public sealed class EffectPresentationBinding
@@ -67,6 +68,12 @@ namespace Decay
         internal string CompletionKey => _completionKey ?? string.Empty;
         internal bool IsOneShotConfigured => _oneShotPresentation.IsConfigured;
         internal bool IsPersistentConfigured => _persistentPresentation.IsConfigured;
+
+        internal void BindAnimator(Animator animator)
+        {
+            _oneShotPresentation.BindAnimator(animator);
+            _persistentPresentation.BindAnimator(animator);
+        }
 
         public bool TryValidate(string label, out string error)
         {
@@ -106,10 +113,7 @@ namespace Decay
             PendingCompletions.Enqueue(onCompleted);
         }
 
-        internal void SetPersistent(bool isActive)
-        {
-            _persistentPresentation.SetActive(isActive);
-        }
+        internal void SetPersistent(bool isActive) => _persistentPresentation.SetActive(isActive);
 
         internal bool TryComplete(string completionKey)
         {

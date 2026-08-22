@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -7,7 +8,7 @@ namespace Decay
     /// <summary>
     /// Coordinates presentation around already-authoritative battle results. It never requests or completes gameplay
     /// phases. The authoritative Unity bridge supplies results and completion callbacks; this Director only displays
-    /// those results and reports when blocking authored presentation has completed.
+    /// those results and reports when blocking presentation has completed.
     /// </summary>
     public sealed class BattlePresentationDirector : MonoBehaviour
     {
@@ -19,6 +20,12 @@ namespace Decay
         [SerializeField] private RoundCounterView _roundCounterView;
         [SerializeField] private BattleBoardView _boardView;
 
+        [Header("Optional Ambient Presentation Surfaces")]
+        [Tooltip("Optional enemy presentation surface. Assign the enemy object here when its authored Idle/hover animation is ready.")]
+        [SerializeField] private AmbientPresentationView _enemyAmbientView;
+        [Tooltip("Optional abacus presentation surface. Assign the abacus object here when its authored Idle/hover animation is ready.")]
+        [SerializeField] private AmbientPresentationView _abacusAmbientView;
+
         private BattleRuntime _runtime;
         private BattleDiceViewCoordinator _diceViews;
         private BattleSceneDiceLayout _layout;
@@ -27,11 +34,16 @@ namespace Decay
         private Action _enemyRepositionPresentationCompleted;
         private Action _enemySetupPresentationCompleted;
         private readonly List<DiceInstanceId> _activeSetupDiceIds = new List<DiceInstanceId>();
+        private readonly List<Coroutine> _activeSetupStartCoroutines = new List<Coroutine>();
         private readonly List<DiceRolledFact> _activeRollFacts = new List<DiceRolledFact>();
+        private readonly List<Coroutine> _activeRollStartCoroutines = new List<Coroutine>();
+        private readonly System.Random _presentationRandom = new System.Random();
         private PresentationCompletionBarrier _setupBarrier;
         private PresentationCompletionBarrier _rollBarrier;
         private PresentationCompletionBarrier _faceRevealBarrier;
         private PresentationCompletionBarrier _enemyRepositionBarrier;
+        private int _enemySetupGeneration;
+        private int _rollGeneration;
 
         public bool IsBound => _runtime != null;
         public BattlePresentationSettings Settings => _settings;
@@ -56,6 +68,8 @@ namespace Decay
             if (!_hourglassView.TryValidate(out error)) return false;
             if (_roundCounterView != null && !_roundCounterView.TryValidate(out error)) return false;
             if (_boardView != null && !_boardView.TryValidate(out error)) return false;
+            if (_enemyAmbientView != null && !_enemyAmbientView.TryValidate(out error)) return false;
+            if (_abacusAmbientView != null && !_abacusAmbientView.TryValidate(out error)) return false;
 
             error = string.Empty;
             return true;
@@ -85,6 +99,7 @@ namespace Decay
             if (setupResult == null) throw new ArgumentNullException(nameof(setupResult));
 
             CancelEnemySetupPresentation();
+            int generation = _enemySetupGeneration;
             _enemySetupPresentationCompleted = onCompleted;
             CollectSetupDice(setupResult, _activeSetupDiceIds);
             if (_activeSetupDiceIds.Count == 0)
@@ -94,12 +109,28 @@ namespace Decay
             }
 
             _setupBarrier = new PresentationCompletionBarrier(CompleteEnemySetupPresentation);
+            int presentedIndex = 0;
             for (int i = 0; i < _activeSetupDiceIds.Count; i++)
             {
                 if (!_diceViews.TryGetView(_activeSetupDiceIds[i], out DiceView view))
                     continue;
+
                 Action completed = _setupBarrier.Register();
-                view.PlayEnemySetupPresentation(completed);
+                float startDelay = _settings.EnemySetupStartStagger * presentedIndex;
+                presentedIndex++;
+
+                if (startDelay <= 0f)
+                {
+                    view.PlayEnemySetupPresentation(completed);
+                    continue;
+                }
+
+                Coroutine routine = StartCoroutine(StartEnemySetupPresentationAfterDelay(
+                    view,
+                    startDelay,
+                    generation,
+                    completed));
+                _activeSetupStartCoroutines.Add(routine);
             }
             _setupBarrier.Seal();
         }
@@ -111,8 +142,12 @@ namespace Decay
             if (!authoritativeRollResult.IsApproved)
                 throw new ArgumentException("Presentation may only display an approved authoritative Roll result.", nameof(authoritativeRollResult));
 
-            CancelEnemySetupPresentation();
+            // Enemy setup authority already committed its semantic destinations before setup presentation began.
+            // Interrupt only its transient visuals and rendered transforms; do not refresh visual content here because
+            // Roll authority has already selected faces that must remain hidden until face-reveal presentation.
+            CancelEnemySetupPresentation(reconcileRenderedDestinations: true);
             CancelRollPresentation();
+            int generation = _rollGeneration;
             _rollPresentationCompleted = onCompleted;
             _activeRollFacts.Clear();
             for (int i = 0; i < authoritativeRollResult.Facts.Count; i++)
@@ -122,6 +157,8 @@ namespace Decay
             }
 
             _hourglassView.ReconcilePhase(_runtime.BattleState.CurrentPhase);
+            _hourglassView.SetPresentationInteractionEnabled(false);
+            SetAmbientIdlePresentation(false);
             _rollBarrier = new PresentationCompletionBarrier(BeginFaceRevealPresentation);
 
             Action hourglassCompleted = _rollBarrier.Register();
@@ -131,8 +168,21 @@ namespace Decay
             {
                 if (!_diceViews.TryGetView(_activeRollFacts[i].DiceId, out DiceView view))
                     continue;
+
                 Action diceCompleted = _rollBarrier.Register();
-                view.PlayRollPresentation(diceCompleted);
+                float startDelay = NextRollStartDelay();
+                if (startDelay <= 0f)
+                {
+                    view.PlayRollPresentation(diceCompleted);
+                    continue;
+                }
+
+                Coroutine routine = StartCoroutine(StartRollPresentationAfterDelay(
+                    view,
+                    startDelay,
+                    generation,
+                    diceCompleted));
+                _activeRollStartCoroutines.Add(routine);
             }
 
             if (_roundCounterView != null && _runtime.BattleState.CurrentRoundNumber == 1)
@@ -147,6 +197,8 @@ namespace Decay
         internal void PresentEnemyReposition(Action onCompleted)
         {
             RequireBound();
+            _hourglassView.SetPresentationInteractionEnabled(false);
+            SetAmbientIdlePresentation(false);
             _enemyRepositionPresentationCompleted = onCompleted;
             _enemyRepositionBarrier?.Cancel();
             _enemyRepositionBarrier = new PresentationCompletionBarrier(CompleteEnemyRepositionPresentation);
@@ -202,20 +254,75 @@ namespace Decay
         {
             if (!IsBound) return;
 
+            BattlePhase phase = _runtime.BattleState.CurrentPhase;
+            bool passiveInteractionPhase = IsPassiveInteractionPhase(phase);
+
             _diceViews.ReconcileAll(invokeRecoveryHooks);
-            _hourglassView.ReconcilePhase(_runtime.BattleState.CurrentPhase, invokeRecoveryHooks);
+            _hourglassView.ReconcilePhase(phase, invokeRecoveryHooks);
+            _hourglassView.SetPresentationInteractionEnabled(passiveInteractionPhase);
             _roundCounterView?.ReconcileRoundNumber(_runtime.BattleState.CurrentRoundNumber, invokeRecoveryHooks);
             _boardView?.ReconcileAuthoritativePresentation(invokeRecoveryHooks);
+            SetAmbientIdlePresentation(passiveInteractionPhase);
 
-            if (_runtime.BattleState.CurrentPhase == BattlePhase.PlayerReposition)
+            if (phase == BattlePhase.PlayerReposition)
                 _diceViews.ApplyPredictiveDecayPreview(_runtime.BattleController.ResolveDecayPreview());
             else
                 _diceViews.ClearPredictiveDecayPresentation();
         }
 
+        private IEnumerator StartEnemySetupPresentationAfterDelay(
+            DiceView view,
+            float delay,
+            int generation,
+            Action onCompleted)
+        {
+            yield return new WaitForSeconds(delay);
+
+            if (generation != _enemySetupGeneration)
+                yield break;
+
+            if (view == null)
+            {
+                onCompleted?.Invoke();
+                yield break;
+            }
+
+            view.PlayEnemySetupPresentation(onCompleted);
+        }
+
+        private IEnumerator StartRollPresentationAfterDelay(
+            DiceView view,
+            float delay,
+            int generation,
+            Action onCompleted)
+        {
+            yield return new WaitForSeconds(delay);
+
+            if (generation != _rollGeneration)
+                yield break;
+
+            if (view == null)
+            {
+                onCompleted?.Invoke();
+                yield break;
+            }
+
+            view.PlayRollPresentation(onCompleted);
+        }
+
+        private float NextRollStartDelay()
+        {
+            Vector2 range = _settings.RollStartOffsetRange;
+            if (range.y <= range.x)
+                return range.x;
+
+            return range.x + ((float)_presentationRandom.NextDouble() * (range.y - range.x));
+        }
+
         private void BeginFaceRevealPresentation()
         {
             _rollBarrier = null;
+            _activeRollStartCoroutines.Clear();
             _faceRevealBarrier?.Cancel();
             _faceRevealBarrier = new PresentationCompletionBarrier(CompleteRollPresentation);
 
@@ -245,6 +352,7 @@ namespace Decay
         private void CompleteRollPresentation()
         {
             _faceRevealBarrier = null;
+            _activeRollStartCoroutines.Clear();
             _activeRollFacts.Clear();
             Action callback = _rollPresentationCompleted;
             _rollPresentationCompleted = null;
@@ -262,6 +370,7 @@ namespace Decay
         private void CompleteEnemySetupPresentation()
         {
             _setupBarrier = null;
+            _activeSetupStartCoroutines.Clear();
             _activeSetupDiceIds.Clear();
             Action callback = _enemySetupPresentationCompleted;
             _enemySetupPresentationCompleted = null;
@@ -281,19 +390,41 @@ namespace Decay
             _diceViews?.CancelAllPresentation();
         }
 
-        private void CancelEnemySetupPresentation()
+        private void CancelEnemySetupPresentation(bool reconcileRenderedDestinations = false)
         {
+            _enemySetupGeneration++;
+            for (int i = 0; i < _activeSetupStartCoroutines.Count; i++)
+            {
+                if (_activeSetupStartCoroutines[i] != null)
+                    StopCoroutine(_activeSetupStartCoroutines[i]);
+            }
+            _activeSetupStartCoroutines.Clear();
+
             _setupBarrier?.Cancel();
             _setupBarrier = null;
             _enemySetupPresentationCompleted = null;
             for (int i = 0; i < _activeSetupDiceIds.Count; i++)
-                if (_diceViews != null && _diceViews.TryGetView(_activeSetupDiceIds[i], out DiceView view))
-                    view.CancelEnemySetupPresentation();
+            {
+                if (_diceViews == null || !_diceViews.TryGetView(_activeSetupDiceIds[i], out DiceView view))
+                    continue;
+
+                view.CancelEnemySetupPresentation();
+                if (reconcileRenderedDestinations)
+                    view.ReconcileRenderedTransformToDestination();
+            }
             _activeSetupDiceIds.Clear();
         }
 
         private void CancelRollPresentation()
         {
+            _rollGeneration++;
+            for (int i = 0; i < _activeRollStartCoroutines.Count; i++)
+            {
+                if (_activeRollStartCoroutines[i] != null)
+                    StopCoroutine(_activeRollStartCoroutines[i]);
+            }
+            _activeRollStartCoroutines.Clear();
+
             _rollBarrier?.Cancel();
             _rollBarrier = null;
             _faceRevealBarrier?.Cancel();
@@ -310,6 +441,16 @@ namespace Decay
             _activeRollFacts.Clear();
             _hourglassView?.CancelRollPresentation();
         }
+
+        private void SetAmbientIdlePresentation(bool isActive)
+        {
+            _roundCounterView?.SetIdlePresentation(isActive);
+            _enemyAmbientView?.SetIdlePresentation(isActive);
+            _abacusAmbientView?.SetIdlePresentation(isActive);
+        }
+
+        private static bool IsPassiveInteractionPhase(BattlePhase phase) =>
+            phase == BattlePhase.Setup || phase == BattlePhase.PlayerReposition;
 
         private static void CollectSetupDice(EnemySetupExecutionResult result, List<DiceInstanceId> output)
         {
@@ -341,11 +482,15 @@ namespace Decay
             HourglassView hourglassView,
             RoundCounterView roundCounterView = null,
             BattleBoardView boardView = null,
-            BattlePresentationSettings settings = null)
+            BattlePresentationSettings settings = null,
+            AmbientPresentationView enemyAmbientView = null,
+            AmbientPresentationView abacusAmbientView = null)
         {
             _hourglassView = hourglassView;
             _roundCounterView = roundCounterView;
             _boardView = boardView;
+            _enemyAmbientView = enemyAmbientView;
+            _abacusAmbientView = abacusAmbientView;
             if (settings != null) _settings = settings;
         }
 

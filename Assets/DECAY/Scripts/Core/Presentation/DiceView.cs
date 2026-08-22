@@ -6,15 +6,25 @@ namespace Decay
 {
     /// <summary>
     /// Presentation for one battle dice. Gameplay state owns identity/location/availability; this View receives
-    /// authoritative visual content and semantic destinations, while authored Animators own how transitions look.
+    /// authoritative visual content and semantic destinations, while one editor-assigned Animator Controller and its
+    /// Animation Clips own authored visual timing, transforms, alpha, layering/blending, sprite changes, and curves.
+    /// Runtime destination movement remains a separate presentation concern because its endpoint is authoritative data.
     /// </summary>
-    public sealed class DiceView : MonoBehaviour
+    public sealed class DiceView : MonoBehaviour, IPointerPresentationTarget
     {
         [Header("Base Presentation")]
         [SerializeField] private SpriteRenderer _spriteRenderer;
         [SerializeField] private Collider _interactionCollider;
+        [Tooltip("Single Animator used by this DiceView's authored animation parameters. If left empty, DiceView auto-finds an Animator on this object or its children. Assign your 2D Animator Controller on that Animator component.")]
+        [SerializeField] private Animator _animator;
         [Tooltip("Optional editor-authored trigger used to return transient animation to the persistent authoritative visual state after reconciliation.")]
         [SerializeField] private AnimatorTriggerPresentationBinding _reconcilePresentation = new AnimatorTriggerPresentationBinding();
+
+        [Header("Pointer Presentation")]
+        [Tooltip("Presentation-only hover state. Gameplay availability is still decided by authoritative interaction gates.")]
+        [SerializeField] private AnimatorBoolPresentationBinding _hoverPresentation = new AnimatorBoolPresentationBinding();
+        [Tooltip("Optional authored decorative press response. It does not approve movement, selection, or any other gameplay request.")]
+        [SerializeField] private AnimatorTriggerPresentationBinding _decorativePressPresentation = new AnimatorTriggerPresentationBinding();
 
         [Header("Authored One-Shot Presentation")]
         [SerializeField] private AnimatorTriggerPresentationBinding _enemySetupPresentation = new AnimatorTriggerPresentationBinding();
@@ -26,6 +36,8 @@ namespace Decay
         [SerializeField] private AnimatorTriggerPresentationBinding _checkedPresentation = new AnimatorTriggerPresentationBinding();
         [SerializeField] private AnimatorTriggerPresentationBinding _scorePresentation = new AnimatorTriggerPresentationBinding();
         [SerializeField] private AnimatorTriggerPresentationBinding _resetPresentation = new AnimatorTriggerPresentationBinding();
+        [Tooltip("Optional authored response used after runtime destination movement such as a board swap or enemy population.")]
+        [SerializeField] private AnimatorTriggerPresentationBinding _settlePresentation = new AnimatorTriggerPresentationBinding();
 
         [Header("Predictive Presentation")]
         [SerializeField] private AnimatorBoolPresentationBinding _targetedPresentation = new AnimatorBoolPresentationBinding();
@@ -48,15 +60,20 @@ namespace Decay
         private Action _checkedCompletion;
         private Action _scoreCompletion;
         private Action _resetCompletion;
+        private Action _settleCompletion;
 
         public DiceInstanceId DiceId => _diceId;
         public bool IsBound => _diceId.IsValid;
         public SpriteRenderer SpriteRenderer => _spriteRenderer;
         public bool HasPresentationDestination => _hasPresentationDestination;
         public Vector3 PresentationDestinationWorldPosition => _hasPresentationDestination ? _presentationDestination.WorldPosition : transform.position;
+        bool IPointerPresentationTarget.PointerPresentationEnabled =>
+            isActiveAndEnabled && _interactionCollider != null && _interactionCollider.enabled;
 
         public bool TryValidate(out string error)
         {
+            BindPresentationAnimator();
+
             if (_spriteRenderer == null)
             {
                 error = $"{name}: DiceView requires a SpriteRenderer reference.";
@@ -64,6 +81,8 @@ namespace Decay
             }
 
             if (!_reconcilePresentation.TryValidate($"{name} Reconcile", out error)
+                || !_hoverPresentation.TryValidate($"{name} Hover", out error)
+                || !_decorativePressPresentation.TryValidate($"{name} Decorative Press", out error)
                 || !_enemySetupPresentation.TryValidate($"{name} Enemy Setup", out error)
                 || !_rollPresentation.TryValidate($"{name} Roll", out error)
                 || !_faceRevealPresentation.TryValidate($"{name} Face Reveal", out error)
@@ -73,6 +92,7 @@ namespace Decay
                 || !_checkedPresentation.TryValidate($"{name} Checked", out error)
                 || !_scorePresentation.TryValidate($"{name} Score", out error)
                 || !_resetPresentation.TryValidate($"{name} Reset", out error)
+                || !_settlePresentation.TryValidate($"{name} Settle", out error)
                 || !_targetedPresentation.TryValidate($"{name} Targeted", out error)
                 || !_willDecayPresentation.TryValidate($"{name} WillDecay", out error)
                 || !_saveSourcePresentation.TryValidate($"{name} Save Source", out error))
@@ -131,6 +151,8 @@ namespace Decay
         {
             if (_interactionCollider != null)
                 _interactionCollider.enabled = isEnabled;
+            if (!isEnabled)
+                _hoverPresentation.SetActive(false);
         }
 
         internal void SetPresentationDestination(DicePresentationDestination destination)
@@ -163,6 +185,7 @@ namespace Decay
         internal void PlayCheckedPresentation(Action onCompleted) => StartAuthoredPresentation(_checkedPresentation, ref _checkedCompletion, onCompleted);
         internal void PlayScorePresentation(Action onCompleted) => StartAuthoredPresentation(_scorePresentation, ref _scoreCompletion, onCompleted);
         internal void PlayResetPresentation(Action onCompleted) => StartAuthoredPresentation(_resetPresentation, ref _resetCompletion, onCompleted);
+        internal void PlaySettlePresentation(Action onCompleted) => StartAuthoredPresentation(_settlePresentation, ref _settleCompletion, onCompleted);
 
         internal void PlayEffectPresentation(EffectPresentationRequest request, Action onCompleted)
         {
@@ -209,6 +232,7 @@ namespace Decay
 
         internal void CancelAllPresentation()
         {
+            _decorativePressPresentation.Cancel();
             CancelEnemySetupPresentation();
             CancelRollPresentation();
             CancelFaceRevealPresentation();
@@ -218,8 +242,10 @@ namespace Decay
             CancelOneShot(_checkedPresentation, ref _checkedCompletion);
             CancelOneShot(_scorePresentation, ref _scoreCompletion);
             CancelOneShot(_resetPresentation, ref _resetCompletion);
+            CancelOneShot(_settlePresentation, ref _settleCompletion);
             for (int i = 0; i < _effectPresentations.Count; i++)
                 _effectPresentations[i]?.CancelAll();
+            _hoverPresentation.SetActive(false);
             ClearPredictiveDecayPresentation();
         }
 
@@ -232,6 +258,7 @@ namespace Decay
         public void NotifyCheckedPresentationComplete() => CompleteOneShot(ref _checkedCompletion);
         public void NotifyScorePresentationComplete() => CompleteOneShot(ref _scoreCompletion);
         public void NotifyResetPresentationComplete() => CompleteOneShot(ref _resetCompletion);
+        public void NotifySettlePresentationComplete() => CompleteOneShot(ref _settleCompletion);
 
         /// <summary>Animation Event endpoint. The key is editor-authored on the matching effect presentation binding.</summary>
         public void NotifyEffectPresentationComplete(string completionKey)
@@ -243,11 +270,18 @@ namespace Decay
             }
         }
 
-        internal void ConfigureForTests(SpriteRenderer spriteRenderer, Collider interactionCollider)
+        internal void ConfigureForTests(SpriteRenderer spriteRenderer, Collider interactionCollider, Animator animator = null)
         {
             _spriteRenderer = spriteRenderer;
             _interactionCollider = interactionCollider;
+            if (animator != null)
+                _animator = animator;
+            BindPresentationAnimator();
         }
+
+        void IPointerPresentationTarget.SetPointerHovered(bool isHovered) => _hoverPresentation.SetActive(isHovered);
+
+        void IPointerPresentationTarget.PlayPointerPressPresentation() => _decorativePressPresentation.Play();
 
         private EffectPresentationBinding FindEffectBinding(EffectId effectId, PresentationChannel channel)
         {
@@ -260,7 +294,13 @@ namespace Decay
             return null;
         }
 
-        private void Awake() => RequireConfigured();
+        private void Awake()
+        {
+            ResolveAnimatorReference();
+            BindPresentationAnimator();
+            RequireConfigured();
+        }
+
         private void OnDisable() => CancelAllPresentation();
 
         private void OnValidate()
@@ -269,6 +309,41 @@ namespace Decay
                 _spriteRenderer = GetComponent<SpriteRenderer>();
             if (_interactionCollider == null)
                 _interactionCollider = GetComponent<Collider>();
+            ResolveAnimatorReference();
+            BindPresentationAnimator();
+        }
+
+        private void ResolveAnimatorReference()
+        {
+            if (_animator != null)
+                return;
+
+            _animator = GetComponent<Animator>();
+            if (_animator == null)
+                _animator = GetComponentInChildren<Animator>(true);
+        }
+
+        private void BindPresentationAnimator()
+        {
+            _reconcilePresentation.BindAnimator(_animator);
+            _hoverPresentation.BindAnimator(_animator);
+            _decorativePressPresentation.BindAnimator(_animator);
+            _enemySetupPresentation.BindAnimator(_animator);
+            _rollPresentation.BindAnimator(_animator);
+            _faceRevealPresentation.BindAnimator(_animator);
+            _decayPresentation.BindAnimator(_animator);
+            _savedPresentation.BindAnimator(_animator);
+            _saviorPresentation.BindAnimator(_animator);
+            _checkedPresentation.BindAnimator(_animator);
+            _scorePresentation.BindAnimator(_animator);
+            _resetPresentation.BindAnimator(_animator);
+            _settlePresentation.BindAnimator(_animator);
+            _targetedPresentation.BindAnimator(_animator);
+            _willDecayPresentation.BindAnimator(_animator);
+            _saveSourcePresentation.BindAnimator(_animator);
+
+            for (int i = 0; i < _effectPresentations.Count; i++)
+                _effectPresentations[i]?.BindAnimator(_animator);
         }
 
         private static void StartAuthoredPresentation(AnimatorTriggerPresentationBinding binding, ref Action pendingCompletion, Action onCompleted)
