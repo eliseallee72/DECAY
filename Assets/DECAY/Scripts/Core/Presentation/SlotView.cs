@@ -6,7 +6,7 @@ namespace Decay
 {
     /// <summary>
     /// Editor-authored presentation surface for one board slot. BoardState owns occupancy/condition; SlotView receives
-    /// the authoritative condition and exposes transition hooks without making the animation responsible for final state.
+    /// the authoritative condition and exposes transition hooks without making animation responsible for final state.
     /// </summary>
     public sealed class SlotView : MonoBehaviour
     {
@@ -22,15 +22,21 @@ namespace Decay
         [SerializeField] private AnimatorTriggerPresentationBinding _unstablePresentation = new AnimatorTriggerPresentationBinding();
         [SerializeField] private AnimatorTriggerPresentationBinding _scorePresentation = new AnimatorTriggerPresentationBinding();
 
+        [Header("Optional Procedural Layers")]
+        [SerializeField] private ProceduralTransformPresentationBinding _checkedMotion = new ProceduralTransformPresentationBinding();
+        [SerializeField] private ProceduralTransformPresentationBinding _breakMotion = new ProceduralTransformPresentationBinding();
+        [SerializeField] private ProceduralTransformPresentationBinding _unstableMotion = new ProceduralTransformPresentationBinding();
+        [SerializeField] private ProceduralTransformPresentationBinding _scoreMotion = new ProceduralTransformPresentationBinding();
+
         [Header("Score Value Presentation Hook")]
         [Tooltip("Connect an editor-authored score display component here. Framework code does not create text or sprites.")]
         [SerializeField] private UnityEvent<int> _showScoreValue = new UnityEvent<int>();
         [SerializeField] private UnityEvent _hideScoreValue = new UnityEvent();
 
-        private Action _checkedCompletion;
-        private Action _breakCompletion;
-        private Action _unstableCompletion;
-        private Action _scoreCompletion;
+        private HybridOneShotPresentationRun _checkedRun;
+        private HybridOneShotPresentationRun _breakRun;
+        private HybridOneShotPresentationRun _unstableRun;
+        private HybridOneShotPresentationRun _scoreRun;
 
         public bool TryValidate(out string error)
         {
@@ -39,7 +45,11 @@ namespace Decay
                 && _checkedPresentation.TryValidate($"{name} Checked", out error)
                 && _breakPresentation.TryValidate($"{name} Break", out error)
                 && _unstablePresentation.TryValidate($"{name} Unstable", out error)
-                && _scorePresentation.TryValidate($"{name} Score", out error);
+                && _scorePresentation.TryValidate($"{name} Score", out error)
+                && _checkedMotion.TryValidate($"{name} Checked Motion", out error)
+                && _breakMotion.TryValidate($"{name} Break Motion", out error)
+                && _unstableMotion.TryValidate($"{name} Unstable Motion", out error)
+                && _scoreMotion.TryValidate($"{name} Score Motion", out error);
         }
 
         internal void ReconcileCondition(SlotCondition condition, bool invokeRecoveryHook)
@@ -52,48 +62,44 @@ namespace Decay
         internal void ShowScoreValue(int scoreValue) => _showScoreValue?.Invoke(scoreValue);
         internal void HideScoreValue() => _hideScoreValue?.Invoke();
 
-        internal void PlayCheckedPresentation(Action onCompleted) => Start(_checkedPresentation, ref _checkedCompletion, onCompleted);
-        internal void PlayBreakPresentation(Action onCompleted) => Start(_breakPresentation, ref _breakCompletion, onCompleted);
-        internal void PlayUnstablePresentation(Action onCompleted) => Start(_unstablePresentation, ref _unstableCompletion, onCompleted);
-        internal void PlayScorePresentation(Action onCompleted) => Start(_scorePresentation, ref _scoreCompletion, onCompleted);
+        internal void PlayCheckedPresentation(Action onCompleted) =>
+            StartHybrid(_checkedPresentation, _checkedMotion, ref _checkedRun, onCompleted);
+        internal void PlayBreakPresentation(Action onCompleted) =>
+            StartHybrid(_breakPresentation, _breakMotion, ref _breakRun, onCompleted);
+        internal void PlayUnstablePresentation(Action onCompleted) =>
+            StartHybrid(_unstablePresentation, _unstableMotion, ref _unstableRun, onCompleted);
+        internal void PlayScorePresentation(Action onCompleted) =>
+            StartHybrid(_scorePresentation, _scoreMotion, ref _scoreRun, onCompleted);
 
-        public void NotifyCheckedPresentationComplete() => Complete(ref _checkedCompletion);
-        public void NotifyBreakPresentationComplete() => Complete(ref _breakCompletion);
-        public void NotifyUnstablePresentationComplete() => Complete(ref _unstableCompletion);
-        public void NotifyScorePresentationComplete() => Complete(ref _scoreCompletion);
+        public void NotifyCheckedPresentationComplete() => _checkedRun?.NotifyAuthoredComplete();
+        public void NotifyBreakPresentationComplete() => _breakRun?.NotifyAuthoredComplete();
+        public void NotifyUnstablePresentationComplete() => _unstableRun?.NotifyAuthoredComplete();
+        public void NotifyScorePresentationComplete() => _scoreRun?.NotifyAuthoredComplete();
 
         internal void CancelAllPresentation()
         {
-            Cancel(_checkedPresentation, ref _checkedCompletion);
-            Cancel(_breakPresentation, ref _breakCompletion);
-            Cancel(_unstablePresentation, ref _unstableCompletion);
-            Cancel(_scorePresentation, ref _scoreCompletion);
+            CancelRun(ref _checkedRun);
+            CancelRun(ref _breakRun);
+            CancelRun(ref _unstableRun);
+            CancelRun(ref _scoreRun);
         }
 
         private void OnDisable() => CancelAllPresentation();
 
-        private static void Start(AnimatorTriggerPresentationBinding binding, ref Action pending, Action completed)
+        private void StartHybrid(
+            AnimatorTriggerPresentationBinding authored,
+            ProceduralTransformPresentationBinding procedural,
+            ref HybridOneShotPresentationRun run,
+            Action onCompleted)
         {
-            pending = null;
-            if (!binding.Play())
-            {
-                completed?.Invoke();
-                return;
-            }
-            pending = completed;
+            CancelRun(ref run);
+            run = HybridOneShotPresentationRun.Start(this, authored, procedural, onCompleted);
         }
 
-        private static void Cancel(AnimatorTriggerPresentationBinding binding, ref Action pending)
+        private static void CancelRun(ref HybridOneShotPresentationRun run)
         {
-            pending = null;
-            binding.Cancel();
-        }
-
-        private static void Complete(ref Action pending)
-        {
-            Action callback = pending;
-            pending = null;
-            callback?.Invoke();
+            run?.Cancel();
+            run = null;
         }
     }
 }
