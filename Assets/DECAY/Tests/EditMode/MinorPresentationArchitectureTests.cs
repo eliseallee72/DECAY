@@ -75,5 +75,52 @@ namespace Decay.Tests
             Assert.That(fields.Any(field => typeof(BattleState).IsAssignableFrom(field.FieldType)), Is.False,
                 "Hourglass interaction availability may reflect authoritative phase but must not own battle authority.");
         }
+
+        [Test]
+        public void AnimatorParameterBindings_DoNotExposeSerializedAnimatorReferences()
+        {
+            Type[] bindingTypes =
+            {
+                typeof(AnimatorTriggerPresentationBinding),
+                typeof(AnimatorBoolPresentationBinding),
+                typeof(AnimatorIntPresentationBinding)
+            };
+
+            foreach (Type bindingType in bindingTypes)
+            {
+                FieldInfo[] fields = bindingType.GetFields(BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
+                bool hasSerializedAnimator = fields.Any(field =>
+                    field.FieldType == typeof(Animator)
+                    && field.GetCustomAttribute<SerializeField>() != null);
+
+                Assert.That(hasSerializedAnimator, Is.False,
+                    $"{bindingType.Name} must only expose parameter data; the owning View supplies one shared Animator.");
+            }
+        }
+
+        [Test]
+        public void PresentationViews_OwnOneSharedSerializedAnimatorReference()
+        {
+            Type[] viewTypes =
+            {
+                typeof(DiceView),
+                typeof(HourglassView),
+                typeof(RoundCounterView),
+                typeof(SlotView),
+                typeof(BattleBoardView),
+                typeof(AmbientPresentationView)
+            };
+
+            foreach (Type viewType in viewTypes)
+            {
+                FieldInfo[] fields = viewType.GetFields(BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
+                int animatorFieldCount = fields.Count(field =>
+                    field.FieldType == typeof(Animator)
+                    && field.GetCustomAttribute<SerializeField>() != null);
+
+                Assert.That(animatorFieldCount, Is.EqualTo(1),
+                    $"{viewType.Name} should expose one shared Animator reference rather than one per animation event.");
+            }
+        }
     }
 }
