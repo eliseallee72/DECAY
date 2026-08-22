@@ -131,15 +131,10 @@ namespace Decay
             if (!authoritativeRollResult.IsApproved)
                 throw new ArgumentException("Presentation may only display an approved authoritative Roll result.", nameof(authoritativeRollResult));
 
-            bool interruptedEnemySetup = IsEnemySetupPresentationActive;
-            CancelEnemySetupPresentation();
-            if (interruptedEnemySetup)
-            {
-                // Setup authority has already moved the dice. Interruption only discards transient presentation and
-                // immediately renders those semantic destinations before Roll presentation starts.
-                _diceViews.ReconcileAll(false);
-            }
-
+            // Enemy setup authority already committed its semantic destinations before setup presentation began.
+            // Interrupt only its transient visuals and rendered transforms; do not refresh visual content here because
+            // Roll authority has already selected faces that must remain hidden until face-reveal presentation.
+            CancelEnemySetupPresentation(reconcileRenderedDestinations: true);
             CancelRollPresentation();
             _rollPresentationCompleted = onCompleted;
             _activeRollFacts.Clear();
@@ -255,11 +250,6 @@ namespace Decay
             view.PlayEnemySetupPresentation(onCompleted);
         }
 
-        private bool IsEnemySetupPresentationActive =>
-            _setupBarrier != null
-            || _activeSetupDiceIds.Count > 0
-            || _activeSetupStartCoroutines.Count > 0;
-
         private void BeginFaceRevealPresentation()
         {
             _rollBarrier = null;
@@ -329,7 +319,7 @@ namespace Decay
             _diceViews?.CancelAllPresentation();
         }
 
-        private void CancelEnemySetupPresentation()
+        private void CancelEnemySetupPresentation(bool reconcileRenderedDestinations = false)
         {
             _enemySetupGeneration++;
             for (int i = 0; i < _activeSetupStartCoroutines.Count; i++)
@@ -343,8 +333,14 @@ namespace Decay
             _setupBarrier = null;
             _enemySetupPresentationCompleted = null;
             for (int i = 0; i < _activeSetupDiceIds.Count; i++)
-                if (_diceViews != null && _diceViews.TryGetView(_activeSetupDiceIds[i], out DiceView view))
-                    view.CancelEnemySetupPresentation();
+            {
+                if (_diceViews == null || !_diceViews.TryGetView(_activeSetupDiceIds[i], out DiceView view))
+                    continue;
+
+                view.CancelEnemySetupPresentation();
+                if (reconcileRenderedDestinations)
+                    view.ReconcileRenderedTransformToDestination();
+            }
             _activeSetupDiceIds.Clear();
         }
 
