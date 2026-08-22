@@ -16,6 +16,7 @@ namespace Decay
         private readonly BattleDiceViewCoordinator _diceViews;
         private readonly BattlePresentationSettings _settings;
         private readonly Dictionary<DiceView, Coroutine> _activeMotions = new Dictionary<DiceView, Coroutine>();
+        private readonly HashSet<DiceView> _activePresentations = new HashSet<DiceView>();
 
         internal BattleDiceMovementPresenter(
             MonoBehaviour coroutineHost,
@@ -27,7 +28,7 @@ namespace Decay
             _settings = settings ?? throw new ArgumentNullException(nameof(settings));
         }
 
-        internal bool HasActiveMotion => _activeMotions.Count > 0;
+        internal bool HasActiveMotion => _activePresentations.Count > 0;
 
         internal bool TryPresent(MoveDiceResult result, Action onCompleted = null)
         {
@@ -58,11 +59,11 @@ namespace Decay
 
         internal void CancelAndReconcile()
         {
-            if (_activeMotions.Count > 0)
+            if (_activePresentations.Count > 0)
             {
-                var views = new List<DiceView>(_activeMotions.Keys);
+                var views = new List<DiceView>(_activePresentations);
                 for (int i = 0; i < views.Count; i++)
-                    CancelMotion(views[i]);
+                    CancelPresentation(views[i]);
             }
 
             _diceViews.ReconcileAll(false);
@@ -87,12 +88,19 @@ namespace Decay
                 return;
             }
 
-            CancelMotion(view);
+            CancelPresentation(view);
+            _activePresentations.Add(view);
+            Action completed = () =>
+            {
+                _activeMotions.Remove(view);
+                _activePresentations.Remove(view);
+                onCompleted?.Invoke();
+            };
 
             if (motionSettings == null || !motionSettings.IsConfigured)
             {
                 view.ReconcileRenderedTransformToDestination();
-                view.PlaySettlePresentation(onCompleted);
+                view.PlaySettlePresentation(completed);
                 return;
             }
 
@@ -101,7 +109,7 @@ namespace Decay
                 view,
                 startWorldPosition,
                 motionSettings,
-                onCompleted));
+                completed));
             _activeMotions[view] = routine;
         }
 
@@ -115,7 +123,10 @@ namespace Decay
             while (elapsed < motionSettings.Duration)
             {
                 if (view == null)
+                {
+                    onCompleted?.Invoke();
                     yield break;
+                }
 
                 float normalizedTime = Mathf.Clamp01(elapsed / motionSettings.Duration);
                 float progress = motionSettings.Easing.Evaluate(normalizedTime);
@@ -129,21 +140,27 @@ namespace Decay
             }
 
             if (view == null)
+            {
+                onCompleted?.Invoke();
                 yield break;
+            }
 
             view.ReconcileRenderedTransformToDestination();
             _activeMotions.Remove(view);
             view.PlaySettlePresentation(onCompleted);
         }
 
-        private void CancelMotion(DiceView view)
+        private void CancelPresentation(DiceView view)
         {
-            if (view == null || !_activeMotions.TryGetValue(view, out Coroutine routine))
+            if (view == null || !_activePresentations.Contains(view))
                 return;
 
-            if (routine != null)
+            if (_activeMotions.TryGetValue(view, out Coroutine routine) && routine != null)
                 _coroutineHost.StopCoroutine(routine);
+
             _activeMotions.Remove(view);
+            _activePresentations.Remove(view);
+            view.CancelAllPresentation();
         }
     }
 }
