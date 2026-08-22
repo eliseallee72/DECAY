@@ -6,13 +6,13 @@ namespace Decay
     /// <summary>
     /// Optional editor-authored Animator trigger binding. Code only requests a named presentation.
     /// The assigned Animator Controller and Animation Clips own the visual implementation: state speed,
-    /// clip curves, Transform animation, SpriteRenderer alpha/color, Animator layers/blending, sprite swaps,
-    /// and other Unity-animatable properties. None of those visual choices are hard-coded here.
+    /// clip curves, Transform animation, SpriteRenderer alpha/color and sorting order, Animator layers/blending,
+    /// sprite swaps, and other Unity-animatable properties. None of those visual choices are hard-coded here.
     /// </summary>
     [Serializable]
     public sealed class AnimatorTriggerPresentationBinding
     {
-        [Tooltip("Animator that owns this presentation. Configure speed, curves, transforms, alpha/color, layers/blending, sprite changes, and other visual properties in its Animator Controller/Animation Clips.")]
+        [Tooltip("Animator that owns this presentation. Configure speed, curves, transforms, alpha/color, sorting order, layers/blending, sprite changes, and other visual properties in its Animator Controller/Animation Clips.")]
         [SerializeField] private Animator _animator;
         [SerializeField] private string _playTrigger;
         [SerializeField] private string _cancelTrigger;
