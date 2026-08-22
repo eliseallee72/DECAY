@@ -6,7 +6,8 @@ namespace Decay
 {
     /// <summary>
     /// Hourglass input/presentation surface. Pointer input only raises an interaction request; authoritative battle flow
-    /// decides what that request means. The Animator owns the hourglass's authored visual timing and properties.
+    /// decides what that request means. One shared Animator on this View owns the hourglass's authored 2D/3D visual
+    /// timing and properties; individual presentation entries only name Animator parameters.
     /// </summary>
     public sealed class HourglassView : MonoBehaviour, IPointerPresentationTarget
     {
@@ -15,6 +16,10 @@ namespace Decay
         [SerializeField] private Collider _interactionCollider;
         [Tooltip("Input System binding used to request interaction. Stored as editor data rather than polled in Update.")]
         [SerializeField] private string _pressBindingPath = "<Mouse>/leftButton";
+
+        [Header("Animator")]
+        [Tooltip("Single Animator used by this HourglassView. If empty, the View auto-finds an Animator on this object or its children. Assign your own Animator Controller to that Animator component.")]
+        [SerializeField] private Animator _animator;
 
         [Header("Persistent Authoritative Presentation")]
         [Tooltip("Animator int representing the authoritative BattlePhase. Animation state never establishes the phase.")]
@@ -39,6 +44,9 @@ namespace Decay
 
         public bool TryValidate(out string error)
         {
+            ResolveAnimatorReference();
+            BindPresentationAnimator();
+
             if (_camera == null)
             {
                 error = $"{name}: HourglassView requires a Camera reference.";
@@ -125,10 +133,13 @@ namespace Decay
             _hoverPresentation.SetActive(false);
         }
 
-        internal void ConfigureForTests(Camera camera, Collider interactionCollider)
+        internal void ConfigureForTests(Camera camera, Collider interactionCollider, Animator animator = null)
         {
             _camera = camera;
             _interactionCollider = interactionCollider;
+            if (animator != null)
+                _animator = animator;
+            BindPresentationAnimator();
         }
 
         void IPointerPresentationTarget.SetPointerHovered(bool isHovered)
@@ -144,8 +155,17 @@ namespace Decay
         {
         }
 
+        private void Awake()
+        {
+            ResolveAnimatorReference();
+            BindPresentationAnimator();
+        }
+
         private void OnEnable()
         {
+            ResolveAnimatorReference();
+            BindPresentationAnimator();
+
             if (!string.IsNullOrWhiteSpace(_pressBindingPath))
             {
                 _pressAction = new InputAction($"{name}_Press", InputActionType.Button, _pressBindingPath);
@@ -166,6 +186,14 @@ namespace Decay
             CancelAllPresentation();
         }
 
+        private void OnValidate()
+        {
+            if (_interactionCollider == null)
+                _interactionCollider = GetComponent<Collider>();
+            ResolveAnimatorReference();
+            BindPresentationAnimator();
+        }
+
         private void OnPressPerformed(InputAction.CallbackContext context)
         {
             if (!_presentationInteractionEnabled)
@@ -179,6 +207,25 @@ namespace Decay
             Ray ray = _camera.ScreenPointToRay(screenPosition);
             if (_interactionCollider.Raycast(ray, out _, _camera.farClipPlane))
                 NotifyInteractionRequested();
+        }
+
+        private void ResolveAnimatorReference()
+        {
+            if (_animator != null)
+                return;
+
+            _animator = GetComponent<Animator>();
+            if (_animator == null)
+                _animator = GetComponentInChildren<Animator>(true);
+        }
+
+        private void BindPresentationAnimator()
+        {
+            _phasePresentation.BindAnimator(_animator);
+            _reconcilePresentation.BindAnimator(_animator);
+            _hoverPresentation.BindAnimator(_animator);
+            _rollToRepositionPresentation.BindAnimator(_animator);
+            _resetToSetupPresentation.BindAnimator(_animator);
         }
 
         private static void StartAuthoredPresentation(
