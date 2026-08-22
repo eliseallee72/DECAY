@@ -4,17 +4,19 @@ using UnityEngine;
 namespace Decay
 {
     /// <summary>
-    /// Editor-authored board-wide presentation surface. Enemy movement authority remains outside this View; this pass
-    /// exposes only the phase/cue hook and a reconciliation hook. Actual dice swap motion is intentionally deferred.
+    /// Editor-authored board-wide presentation surface. Enemy movement authority remains outside this View;
+    /// authored and optional procedural cue layers only communicate that authoritative activity.
     /// </summary>
     public sealed class BattleBoardView : MonoBehaviour
     {
         [SerializeField] private AnimatorTriggerPresentationBinding _enemyRepositionPresentation = new AnimatorTriggerPresentationBinding();
+        [SerializeField] private ProceduralTransformPresentationBinding _enemyRepositionMotion = new ProceduralTransformPresentationBinding();
         [SerializeField] private AnimatorTriggerPresentationBinding _reconcilePresentation = new AnimatorTriggerPresentationBinding();
-        private Action _enemyRepositionCompletion;
+        private HybridOneShotPresentationRun _enemyRepositionRun;
 
         public bool TryValidate(out string error) =>
             _enemyRepositionPresentation.TryValidate($"{name} Enemy Reposition", out error)
+            && _enemyRepositionMotion.TryValidate($"{name} Enemy Reposition Motion", out error)
             && _reconcilePresentation.TryValidate($"{name} Reconcile", out error);
 
         internal void ReconcileAuthoritativePresentation(bool invokeRecoveryHook)
@@ -25,26 +27,21 @@ namespace Decay
 
         internal void PlayEnemyRepositionPresentation(Action onCompleted)
         {
-            _enemyRepositionCompletion = null;
-            if (!_enemyRepositionPresentation.Play())
-            {
-                onCompleted?.Invoke();
-                return;
-            }
-            _enemyRepositionCompletion = onCompleted;
+            CancelAllPresentation();
+            _enemyRepositionRun = HybridOneShotPresentationRun.Start(
+                this,
+                _enemyRepositionPresentation,
+                _enemyRepositionMotion,
+                onCompleted);
         }
 
-        public void NotifyEnemyRepositionPresentationComplete()
-        {
-            Action callback = _enemyRepositionCompletion;
-            _enemyRepositionCompletion = null;
-            callback?.Invoke();
-        }
+        public void NotifyEnemyRepositionPresentationComplete() =>
+            _enemyRepositionRun?.NotifyAuthoredComplete();
 
         internal void CancelAllPresentation()
         {
-            _enemyRepositionCompletion = null;
-            _enemyRepositionPresentation.Cancel();
+            _enemyRepositionRun?.Cancel();
+            _enemyRepositionRun = null;
         }
 
         private void OnDisable() => CancelAllPresentation();
