@@ -15,20 +15,14 @@ namespace Decay
         [SerializeField] private AnimatorBoolPresentationBinding _hoverPresentation = new AnimatorBoolPresentationBinding();
         [SerializeField] private AnimatorTriggerPresentationBinding _reconcilePresentation = new AnimatorTriggerPresentationBinding();
 
-        [Header("Authored One-Shot Presentation")]
+        [Header("Authored Round Counter One-Shots")]
         [SerializeField] private AnimatorTriggerPresentationBinding _showRoundPresentation = new AnimatorTriggerPresentationBinding();
         [SerializeField] private AnimatorTriggerPresentationBinding _resetPresentation = new AnimatorTriggerPresentationBinding();
         [Tooltip("Optional presentation-only response for clicking the counter. It does not submit a gameplay request.")]
         [SerializeField] private AnimatorTriggerPresentationBinding _decorativePressPresentation = new AnimatorTriggerPresentationBinding();
 
-        [Header("Optional Procedural Layers")]
-        [SerializeField] private ProceduralTransformPresentationBinding _showRoundMotion = new ProceduralTransformPresentationBinding();
-        [SerializeField] private ProceduralTransformPresentationBinding _resetMotion = new ProceduralTransformPresentationBinding();
-        [SerializeField] private ProceduralTransformPresentationBinding _decorativePressMotion = new ProceduralTransformPresentationBinding();
-
-        private HybridOneShotPresentationRun _showRoundRun;
-        private HybridOneShotPresentationRun _resetRun;
-        private HybridOneShotPresentationRun _decorativePressRun;
+        private Action _showRoundCompletion;
+        private Action _resetCompletion;
 
         bool IPointerPresentationTarget.PointerPresentationEnabled => isActiveAndEnabled;
 
@@ -40,10 +34,7 @@ namespace Decay
                 && _reconcilePresentation.TryValidate($"{name} Reconcile", out error)
                 && _showRoundPresentation.TryValidate($"{name} Show Round", out error)
                 && _resetPresentation.TryValidate($"{name} Reset", out error)
-                && _decorativePressPresentation.TryValidate($"{name} Decorative Press", out error)
-                && _showRoundMotion.TryValidate($"{name} Show Round Motion", out error)
-                && _resetMotion.TryValidate($"{name} Reset Motion", out error)
-                && _decorativePressMotion.TryValidate($"{name} Decorative Press Motion", out error);
+                && _decorativePressPresentation.TryValidate($"{name} Decorative Press", out error);
         }
 
         internal void ReconcileRoundNumber(int roundNumber, bool invokeRecoveryHook = false)
@@ -58,52 +49,55 @@ namespace Decay
         internal void PlayShowRound(int roundNumber, Action onCompleted)
         {
             _roundNumber.SetValue(roundNumber);
-            StartHybrid(_showRoundPresentation, _showRoundMotion, ref _showRoundRun, onCompleted);
+            StartAuthoredPresentation(_showRoundPresentation, ref _showRoundCompletion, onCompleted);
         }
 
         internal void PlayReset(Action onCompleted) =>
-            StartHybrid(_resetPresentation, _resetMotion, ref _resetRun, onCompleted);
+            StartAuthoredPresentation(_resetPresentation, ref _resetCompletion, onCompleted);
 
-        public void NotifyShowRoundPresentationComplete() => _showRoundRun?.NotifyAuthoredComplete();
-        public void NotifyResetPresentationComplete() => _resetRun?.NotifyAuthoredComplete();
-        public void NotifyDecorativePressPresentationComplete() => _decorativePressRun?.NotifyAuthoredComplete();
+        public void NotifyShowRoundPresentationComplete() => CompleteOneShot(ref _showRoundCompletion);
+        public void NotifyResetPresentationComplete() => CompleteOneShot(ref _resetCompletion);
 
         internal void CancelAllPresentation()
         {
-            CancelRun(ref _showRoundRun);
-            CancelRun(ref _resetRun);
-            CancelRun(ref _decorativePressRun);
+            CancelOneShot(_showRoundPresentation, ref _showRoundCompletion);
+            CancelOneShot(_resetPresentation, ref _resetCompletion);
+            _decorativePressPresentation.Cancel();
             _hoverPresentation.SetActive(false);
             _idlePresentation.SetActive(false);
         }
 
         void IPointerPresentationTarget.SetPointerHovered(bool isHovered) => _hoverPresentation.SetActive(isHovered);
 
-        void IPointerPresentationTarget.PlayPointerPressPresentation()
-        {
-            StartHybrid(
-                _decorativePressPresentation,
-                _decorativePressMotion,
-                ref _decorativePressRun,
-                null);
-        }
+        void IPointerPresentationTarget.PlayPointerPressPresentation() => _decorativePressPresentation.Play();
 
         private void OnDisable() => CancelAllPresentation();
 
-        private void StartHybrid(
-            AnimatorTriggerPresentationBinding authored,
-            ProceduralTransformPresentationBinding procedural,
-            ref HybridOneShotPresentationRun run,
+        private static void StartAuthoredPresentation(
+            AnimatorTriggerPresentationBinding binding,
+            ref Action pendingCompletion,
             Action onCompleted)
         {
-            CancelRun(ref run);
-            run = HybridOneShotPresentationRun.Start(this, authored, procedural, onCompleted);
+            pendingCompletion = null;
+            if (!binding.Play())
+            {
+                onCompleted?.Invoke();
+                return;
+            }
+            pendingCompletion = onCompleted;
         }
 
-        private static void CancelRun(ref HybridOneShotPresentationRun run)
+        private static void CancelOneShot(AnimatorTriggerPresentationBinding binding, ref Action pendingCompletion)
         {
-            run?.Cancel();
-            run = null;
+            pendingCompletion = null;
+            binding.Cancel();
+        }
+
+        private static void CompleteOneShot(ref Action pendingCompletion)
+        {
+            Action callback = pendingCompletion;
+            pendingCompletion = null;
+            callback?.Invoke();
         }
     }
 }
