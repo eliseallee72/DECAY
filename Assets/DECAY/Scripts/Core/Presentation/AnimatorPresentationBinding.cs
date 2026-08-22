@@ -4,12 +4,15 @@ using UnityEngine;
 namespace Decay
 {
     /// <summary>
-    /// Optional editor-authored Animator trigger binding. Code requests a named presentation;
-    /// the Animator Controller and Animation Clips own how that presentation looks and how long it lasts.
+    /// Optional editor-authored Animator trigger binding. Code only requests a named presentation.
+    /// The assigned Animator Controller and Animation Clips own the visual implementation: state speed,
+    /// clip curves, Transform animation, SpriteRenderer alpha/color, Animator layers/blending, sprite swaps,
+    /// and other Unity-animatable properties. None of those visual choices are hard-coded here.
     /// </summary>
     [Serializable]
     public sealed class AnimatorTriggerPresentationBinding
     {
+        [Tooltip("Animator that owns this presentation. Configure speed, curves, transforms, alpha/color, layers/blending, sprite changes, and other visual properties in its Animator Controller/Animation Clips.")]
         [SerializeField] private Animator _animator;
         [SerializeField] private string _playTrigger;
         [SerializeField] private string _cancelTrigger;
@@ -72,7 +75,7 @@ namespace Decay
 
     /// <summary>
     /// Optional editor-authored persistent Animator state. The supplied bool is presentation state only;
-    /// gameplay rules remain authoritative elsewhere.
+    /// gameplay rules remain authoritative elsewhere. The Animator/Animation Clips own all visual properties.
     /// </summary>
     [Serializable]
     public sealed class AnimatorBoolPresentationBinding
@@ -116,6 +119,7 @@ namespace Decay
             _animator.SetBool(Animator.StringToHash(_boolParameter), isActive);
         }
     }
+
     /// <summary>
     /// Optional editor-authored integer Animator parameter, useful when one Animator owns a family of authored states.
     /// </summary>
@@ -161,5 +165,4 @@ namespace Decay
             _animator.SetInteger(Animator.StringToHash(_intParameter), value);
         }
     }
-
 }
