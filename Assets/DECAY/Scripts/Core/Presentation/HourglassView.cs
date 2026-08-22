@@ -6,7 +6,7 @@ namespace Decay
 {
     /// <summary>
     /// Hourglass input/presentation surface. Pointer input only raises an interaction request; authoritative battle flow
-    /// decides what that request means. Authored and optional procedural presentation then reflect that authoritative result.
+    /// decides what that request means. The Animator owns the hourglass's authored visual timing and properties.
     /// </summary>
     public sealed class HourglassView : MonoBehaviour, IPointerPresentationTarget
     {
@@ -24,21 +24,14 @@ namespace Decay
         [Tooltip("Presentation-only hover state. This does not imply the hourglass interaction will be accepted.")]
         [SerializeField] private AnimatorBoolPresentationBinding _hoverPresentation = new AnimatorBoolPresentationBinding();
 
-        [Header("Authored One-Shot Presentation")]
+        [Header("Authored Hourglass One-Shots")]
         [SerializeField] private AnimatorTriggerPresentationBinding _rollToRepositionPresentation = new AnimatorTriggerPresentationBinding();
-        [SerializeField] private AnimatorTriggerPresentationBinding _decayPresentation = new AnimatorTriggerPresentationBinding();
         [SerializeField] private AnimatorTriggerPresentationBinding _resetToSetupPresentation = new AnimatorTriggerPresentationBinding();
-
-        [Header("Optional Procedural Layers")]
-        [SerializeField] private ProceduralTransformPresentationBinding _rollToRepositionMotion = new ProceduralTransformPresentationBinding();
-        [SerializeField] private ProceduralTransformPresentationBinding _decayMotion = new ProceduralTransformPresentationBinding();
-        [SerializeField] private ProceduralTransformPresentationBinding _resetToSetupMotion = new ProceduralTransformPresentationBinding();
 
         private InputAction _pressAction;
         private Action _interactionRequested;
-        private HybridOneShotPresentationRun _rollRun;
-        private HybridOneShotPresentationRun _decayRun;
-        private HybridOneShotPresentationRun _resetRun;
+        private Action _rollCompletion;
+        private Action _resetCompletion;
 
         bool IPointerPresentationTarget.PointerPresentationEnabled => isActiveAndEnabled;
 
@@ -63,11 +56,7 @@ namespace Decay
                 || !_reconcilePresentation.TryValidate($"{name} Reconcile", out error)
                 || !_hoverPresentation.TryValidate($"{name} Hover", out error)
                 || !_rollToRepositionPresentation.TryValidate($"{name} Roll Presentation", out error)
-                || !_decayPresentation.TryValidate($"{name} Decay Presentation", out error)
-                || !_resetToSetupPresentation.TryValidate($"{name} Reset Presentation", out error)
-                || !_rollToRepositionMotion.TryValidate($"{name} Roll Motion", out error)
-                || !_decayMotion.TryValidate($"{name} Decay Motion", out error)
-                || !_resetToSetupMotion.TryValidate($"{name} Reset Motion", out error))
+                || !_resetToSetupPresentation.TryValidate($"{name} Reset Presentation", out error))
                 return false;
 
             error = string.Empty;
@@ -93,30 +82,29 @@ namespace Decay
         }
 
         internal void PlayRollPresentation(Action onCompleted) =>
-            StartHybrid(_rollToRepositionPresentation, _rollToRepositionMotion, ref _rollRun, onCompleted);
-
-        internal void PlayDecayPresentation(Action onCompleted) =>
-            StartHybrid(_decayPresentation, _decayMotion, ref _decayRun, onCompleted);
+            StartAuthoredPresentation(_rollToRepositionPresentation, ref _rollCompletion, onCompleted);
 
         internal void PlayResetPresentation(Action onCompleted) =>
-            StartHybrid(_resetToSetupPresentation, _resetToSetupMotion, ref _resetRun, onCompleted);
+            StartAuthoredPresentation(_resetToSetupPresentation, ref _resetCompletion, onCompleted);
 
         /// <summary>
         /// Public editor/test endpoint for any alternate input surface. It only requests interaction; it never advances flow.
         /// </summary>
         public void NotifyInteractionRequested() => _interactionRequested?.Invoke();
 
-        public void NotifyRollPresentationComplete() => _rollRun?.NotifyAuthoredComplete();
-        public void NotifyDecayPresentationComplete() => _decayRun?.NotifyAuthoredComplete();
-        public void NotifyResetPresentationComplete() => _resetRun?.NotifyAuthoredComplete();
+        public void NotifyRollPresentationComplete() => CompleteOneShot(ref _rollCompletion);
+        public void NotifyResetPresentationComplete() => CompleteOneShot(ref _resetCompletion);
 
-        internal void CancelRollPresentation() => CancelRun(ref _rollRun);
+        internal void CancelRollPresentation()
+        {
+            _rollCompletion = null;
+            _rollToRepositionPresentation.Cancel();
+        }
 
         internal void CancelAllPresentation()
         {
-            CancelRun(ref _rollRun);
-            CancelRun(ref _decayRun);
-            CancelRun(ref _resetRun);
+            CancelRollPresentation();
+            CancelOneShot(_resetToSetupPresentation, ref _resetCompletion);
             _hoverPresentation.SetActive(false);
         }
 
@@ -167,20 +155,31 @@ namespace Decay
                 NotifyInteractionRequested();
         }
 
-        private void StartHybrid(
-            AnimatorTriggerPresentationBinding authored,
-            ProceduralTransformPresentationBinding procedural,
-            ref HybridOneShotPresentationRun run,
+        private static void StartAuthoredPresentation(
+            AnimatorTriggerPresentationBinding binding,
+            ref Action pendingCompletion,
             Action onCompleted)
         {
-            CancelRun(ref run);
-            run = HybridOneShotPresentationRun.Start(this, authored, procedural, onCompleted);
+            pendingCompletion = null;
+            if (!binding.Play())
+            {
+                onCompleted?.Invoke();
+                return;
+            }
+            pendingCompletion = onCompleted;
         }
 
-        private static void CancelRun(ref HybridOneShotPresentationRun run)
+        private static void CancelOneShot(AnimatorTriggerPresentationBinding binding, ref Action pendingCompletion)
         {
-            run?.Cancel();
-            run = null;
+            pendingCompletion = null;
+            binding.Cancel();
+        }
+
+        private static void CompleteOneShot(ref Action pendingCompletion)
+        {
+            Action callback = pendingCompletion;
+            pendingCompletion = null;
+            callback?.Invoke();
         }
     }
 }
