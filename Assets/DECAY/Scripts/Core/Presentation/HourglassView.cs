@@ -32,8 +32,10 @@ namespace Decay
         private Action _interactionRequested;
         private Action _rollCompletion;
         private Action _resetCompletion;
+        private bool _presentationInteractionEnabled = true;
 
-        bool IPointerPresentationTarget.PointerPresentationEnabled => isActiveAndEnabled;
+        bool IPointerPresentationTarget.PointerPresentationEnabled =>
+            isActiveAndEnabled && _presentationInteractionEnabled;
 
         public bool TryValidate(out string error)
         {
@@ -81,6 +83,17 @@ namespace Decay
                 _reconcilePresentation.Play();
         }
 
+        /// <summary>
+        /// Presentation/input-surface availability derived from authoritative battle flow. This never approves an action;
+        /// the battle controller remains the authority when a request is submitted.
+        /// </summary>
+        internal void SetPresentationInteractionEnabled(bool isEnabled)
+        {
+            _presentationInteractionEnabled = isEnabled;
+            if (!isEnabled)
+                _hoverPresentation.SetActive(false);
+        }
+
         internal void PlayRollPresentation(Action onCompleted) =>
             StartAuthoredPresentation(_rollToRepositionPresentation, ref _rollCompletion, onCompleted);
 
@@ -90,7 +103,11 @@ namespace Decay
         /// <summary>
         /// Public editor/test endpoint for any alternate input surface. It only requests interaction; it never advances flow.
         /// </summary>
-        public void NotifyInteractionRequested() => _interactionRequested?.Invoke();
+        public void NotifyInteractionRequested()
+        {
+            if (_presentationInteractionEnabled)
+                _interactionRequested?.Invoke();
+        }
 
         public void NotifyRollPresentationComplete() => CompleteOneShot(ref _rollCompletion);
         public void NotifyResetPresentationComplete() => CompleteOneShot(ref _resetCompletion);
@@ -114,7 +131,13 @@ namespace Decay
             _interactionCollider = interactionCollider;
         }
 
-        void IPointerPresentationTarget.SetPointerHovered(bool isHovered) => _hoverPresentation.SetActive(isHovered);
+        void IPointerPresentationTarget.SetPointerHovered(bool isHovered)
+        {
+            if (_presentationInteractionEnabled)
+                _hoverPresentation.SetActive(isHovered);
+            else if (isHovered)
+                _hoverPresentation.SetActive(false);
+        }
 
         // The hourglass already has a functional click request. Decorative press feedback is intentionally not duplicated here.
         void IPointerPresentationTarget.PlayPointerPressPresentation()
@@ -145,6 +168,9 @@ namespace Decay
 
         private void OnPressPerformed(InputAction.CallbackContext context)
         {
+            if (!_presentationInteractionEnabled)
+                return;
+
             Pointer pointer = Pointer.current;
             if (pointer == null || _camera == null || _interactionCollider == null)
                 return;
