@@ -51,7 +51,7 @@ namespace Decay.Tests
             MethodInfo[] methods = typeof(HourglassView).GetMethods(
                 BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
 
-            Assert.That(methods.Any(method => method.Name.Contains("DecayPresentation", StringComparison.Ordinal)), Is.False,
+            Assert.That(methods.Any(method => method.Name.IndexOf("DecayPresentation", StringComparison.Ordinal) >= 0), Is.False,
                 "Hourglass presentation must not own dice/slot Decay animation hooks.");
         }
     }
