@@ -3,11 +3,54 @@ using UnityEngine;
 
 namespace Decay
 {
+    internal static class AnimatorPresentationParameterValidation
+    {
+        internal static bool TryValidate(
+            Animator animator,
+            string parameterName,
+            AnimatorControllerParameterType expectedType,
+            string label,
+            out string error)
+        {
+            if (string.IsNullOrWhiteSpace(parameterName))
+            {
+                error = string.Empty;
+                return true;
+            }
+
+            if (animator == null)
+            {
+                error = $"{label}: this presentation uses an Animator parameter, but the owning View has no Animator assigned/found.";
+                return false;
+            }
+
+            AnimatorControllerParameter[] parameters = animator.parameters;
+            for (int i = 0; i < parameters.Length; i++)
+            {
+                AnimatorControllerParameter parameter = parameters[i];
+                if (string.Equals(parameter.name, parameterName, StringComparison.Ordinal))
+                {
+                    if (parameter.type == expectedType)
+                    {
+                        error = string.Empty;
+                        return true;
+                    }
+
+                    error = $"{label}: Animator parameter '{parameterName}' exists but is {parameter.type}, not {expectedType}.";
+                    return false;
+                }
+            }
+
+            error = $"{label}: Animator parameter '{parameterName}' no longer exists on the assigned Animator Controller.";
+            return false;
+        }
+    }
+
     /// <summary>
     /// Optional editor-authored Animator trigger binding. The owning View supplies one shared Animator for the object;
-    /// this binding only stores parameter names. The Animator Controller and Animation Clips own state speed, curves,
-    /// Transform animation, SpriteRenderer alpha/color/sorting order, Animator layers/blending, sprite swaps, and other
-    /// Unity-animatable properties. None of those visual choices are hard-coded here.
+    /// this binding stores the controller parameter selected in the Unity Inspector. The Animator Controller and
+    /// Animation Clips own state speed, transitions/exits, curves, Transform animation, SpriteRenderer properties,
+    /// layers/blending, sprite swaps, and other Unity-animatable properties.
     /// </summary>
     [Serializable]
     public sealed class AnimatorTriggerPresentationBinding
@@ -31,15 +74,29 @@ namespace Decay
                 return true;
             }
 
-            if (_animator == null)
+            if (!hasPlay)
             {
-                error = $"{label}: this presentation uses Animator parameters, but the owning View has no Animator assigned/found.";
+                error = $"{label}: a Play Trigger is required when a Cancel Trigger is selected.";
                 return false;
             }
 
-            if (!hasPlay)
+            if (!AnimatorPresentationParameterValidation.TryValidate(
+                    _animator,
+                    _playTrigger,
+                    AnimatorControllerParameterType.Trigger,
+                    $"{label} Play Trigger",
+                    out error))
             {
-                error = $"{label}: Play Trigger is required when a Cancel Trigger is configured.";
+                return false;
+            }
+
+            if (hasCancel && !AnimatorPresentationParameterValidation.TryValidate(
+                    _animator,
+                    _cancelTrigger,
+                    AnimatorControllerParameterType.Trigger,
+                    $"{label} Cancel Trigger",
+                    out error))
+            {
                 return false;
             }
 
@@ -71,7 +128,7 @@ namespace Decay
 
     /// <summary>
     /// Optional editor-authored persistent Animator state. The owning View supplies one shared Animator for the object;
-    /// this binding stores only the bool parameter name. Gameplay rules remain authoritative elsewhere.
+    /// this binding stores the Bool parameter selected from that Animator Controller. Gameplay rules remain authoritative.
     /// </summary>
     [Serializable]
     public sealed class AnimatorBoolPresentationBinding
@@ -84,23 +141,13 @@ namespace Decay
 
         internal void BindAnimator(Animator animator) => _animator = animator;
 
-        public bool TryValidate(string label, out string error)
-        {
-            if (string.IsNullOrWhiteSpace(_boolParameter))
-            {
-                error = string.Empty;
-                return true;
-            }
-
-            if (_animator == null)
-            {
-                error = $"{label}: this presentation uses an Animator bool, but the owning View has no Animator assigned/found.";
-                return false;
-            }
-
-            error = string.Empty;
-            return true;
-        }
+        public bool TryValidate(string label, out string error) =>
+            AnimatorPresentationParameterValidation.TryValidate(
+                _animator,
+                _boolParameter,
+                AnimatorControllerParameterType.Bool,
+                label,
+                out error);
 
         internal void SetActive(bool isActive)
         {
@@ -111,7 +158,7 @@ namespace Decay
 
     /// <summary>
     /// Optional editor-authored integer Animator parameter, useful when one Animator owns a family of authored states.
-    /// The owning View supplies the shared Animator; this binding stores only the parameter name.
+    /// The owning View supplies the shared Animator; this binding stores the Int parameter selected from its controller.
     /// </summary>
     [Serializable]
     public sealed class AnimatorIntPresentationBinding
@@ -124,23 +171,13 @@ namespace Decay
 
         internal void BindAnimator(Animator animator) => _animator = animator;
 
-        public bool TryValidate(string label, out string error)
-        {
-            if (string.IsNullOrWhiteSpace(_intParameter))
-            {
-                error = string.Empty;
-                return true;
-            }
-
-            if (_animator == null)
-            {
-                error = $"{label}: this presentation uses an Animator int, but the owning View has no Animator assigned/found.";
-                return false;
-            }
-
-            error = string.Empty;
-            return true;
-        }
+        public bool TryValidate(string label, out string error) =>
+            AnimatorPresentationParameterValidation.TryValidate(
+                _animator,
+                _intParameter,
+                AnimatorControllerParameterType.Int,
+                label,
+                out error);
 
         internal void SetValue(int value)
         {
