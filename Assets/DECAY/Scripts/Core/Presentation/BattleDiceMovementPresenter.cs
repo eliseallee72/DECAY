@@ -57,16 +57,24 @@ namespace Decay
             }
         }
 
+        /// <summary>
+        /// Cancels transient movement/settle presentation and snaps only rendered transforms to the semantic destinations
+        /// that were already resolved before the newer process began. It deliberately does not refresh sprites or other
+        /// authoritative visual content, so a newly resolved Roll face cannot leak ahead of its reveal presentation.
+        /// </summary>
         internal void CancelAndReconcile()
         {
-            if (_activePresentations.Count > 0)
-            {
-                var views = new List<DiceView>(_activePresentations);
-                for (int i = 0; i < views.Count; i++)
-                    CancelPresentation(views[i]);
-            }
+            if (_activePresentations.Count == 0)
+                return;
 
-            _diceViews.ReconcileAll(false);
+            var views = new List<DiceView>(_activePresentations);
+            for (int i = 0; i < views.Count; i++)
+            {
+                DiceView view = views[i];
+                CancelPresentation(view);
+                if (view != null)
+                    view.ReconcileRenderedTransformToDestination();
+            }
         }
 
         private void PresentSwap(BoardDiceSwappedFact swap, Action onCompleted)
