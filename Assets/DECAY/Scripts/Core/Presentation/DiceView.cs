@@ -9,13 +9,20 @@ namespace Decay
     /// authoritative visual content and semantic destinations. Authored Animator responses and optional editor-authored
     /// procedural transform layers may be combined without either becoming gameplay authority.
     /// </summary>
-    public sealed class DiceView : MonoBehaviour
+    public sealed class DiceView : MonoBehaviour, IPointerPresentationTarget
     {
         [Header("Base Presentation")]
         [SerializeField] private SpriteRenderer _spriteRenderer;
         [SerializeField] private Collider _interactionCollider;
         [Tooltip("Optional editor-authored trigger used to return transient animation to the persistent authoritative visual state after reconciliation.")]
         [SerializeField] private AnimatorTriggerPresentationBinding _reconcilePresentation = new AnimatorTriggerPresentationBinding();
+
+        [Header("Pointer Presentation")]
+        [Tooltip("Presentation-only hover state. Gameplay availability is still decided by authoritative interaction gates.")]
+        [SerializeField] private AnimatorBoolPresentationBinding _hoverPresentation = new AnimatorBoolPresentationBinding();
+        [Tooltip("Optional decorative press response. It does not approve movement, selection, or any other gameplay request.")]
+        [SerializeField] private AnimatorTriggerPresentationBinding _decorativePressPresentation = new AnimatorTriggerPresentationBinding();
+        [SerializeField] private ProceduralTransformPresentationBinding _decorativePressMotion = new ProceduralTransformPresentationBinding();
 
         [Header("Authored One-Shot Presentation")]
         [SerializeField] private AnimatorTriggerPresentationBinding _enemySetupPresentation = new AnimatorTriggerPresentationBinding();
@@ -55,6 +62,7 @@ namespace Decay
         private DiceInstanceId _diceId;
         private DicePresentationDestination _presentationDestination;
         private bool _hasPresentationDestination;
+        private HybridOneShotPresentationRun _decorativePressRun;
         private HybridOneShotPresentationRun _enemySetupRun;
         private HybridOneShotPresentationRun _rollRun;
         private HybridOneShotPresentationRun _faceRevealRun;
@@ -71,6 +79,8 @@ namespace Decay
         public SpriteRenderer SpriteRenderer => _spriteRenderer;
         public bool HasPresentationDestination => _hasPresentationDestination;
         public Vector3 PresentationDestinationWorldPosition => _hasPresentationDestination ? _presentationDestination.WorldPosition : transform.position;
+        bool IPointerPresentationTarget.PointerPresentationEnabled =>
+            isActiveAndEnabled && _interactionCollider != null && _interactionCollider.enabled;
 
         public bool TryValidate(out string error)
         {
@@ -81,6 +91,9 @@ namespace Decay
             }
 
             if (!_reconcilePresentation.TryValidate($"{name} Reconcile", out error)
+                || !_hoverPresentation.TryValidate($"{name} Hover", out error)
+                || !_decorativePressPresentation.TryValidate($"{name} Decorative Press", out error)
+                || !_decorativePressMotion.TryValidate($"{name} Decorative Press Motion", out error)
                 || !_enemySetupPresentation.TryValidate($"{name} Enemy Setup", out error)
                 || !_rollPresentation.TryValidate($"{name} Roll", out error)
                 || !_faceRevealPresentation.TryValidate($"{name} Face Reveal", out error)
@@ -159,6 +172,8 @@ namespace Decay
         {
             if (_interactionCollider != null)
                 _interactionCollider.enabled = isEnabled;
+            if (!isEnabled)
+                _hoverPresentation.SetActive(false);
         }
 
         internal void SetPresentationDestination(DicePresentationDestination destination)
@@ -234,6 +249,7 @@ namespace Decay
 
         internal void CancelAllPresentation()
         {
+            CancelRun(ref _decorativePressRun);
             CancelRun(ref _enemySetupRun);
             CancelRun(ref _rollRun);
             CancelRun(ref _faceRevealRun);
@@ -246,9 +262,11 @@ namespace Decay
             CancelRun(ref _settleRun);
             for (int i = 0; i < _effectPresentations.Count; i++)
                 _effectPresentations[i]?.CancelAll();
+            _hoverPresentation.SetActive(false);
             ClearPredictiveDecayPresentation();
         }
 
+        public void NotifyDecorativePressPresentationComplete() => CompleteAuthored(ref _decorativePressRun);
         public void NotifyEnemySetupPresentationComplete() => CompleteAuthored(ref _enemySetupRun);
         public void NotifyRollPresentationComplete() => CompleteAuthored(ref _rollRun);
         public void NotifyFaceRevealPresentationComplete() => CompleteAuthored(ref _faceRevealRun);
@@ -275,6 +293,12 @@ namespace Decay
             _spriteRenderer = spriteRenderer;
             _interactionCollider = interactionCollider;
         }
+
+        void IPointerPresentationTarget.SetPointerHovered(bool isHovered) =>
+            _hoverPresentation.SetActive(isHovered);
+
+        void IPointerPresentationTarget.PlayPointerPressPresentation() =>
+            StartHybrid(_decorativePressPresentation, _decorativePressMotion, ref _decorativePressRun, null);
 
         private EffectPresentationBinding FindEffectBinding(EffectId effectId, PresentationChannel channel)
         {
