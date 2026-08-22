@@ -17,9 +17,12 @@ namespace Decay
             [SerializeField, Min(0f)] private float _duration;
             [Tooltip("Editor-authored normalized easing. No fallback easing is supplied by code.")]
             [SerializeField] private AnimationCurve _easing = new AnimationCurve();
+            [Tooltip("Use unscaled time for this presentation-only destination motion.")]
+            [SerializeField] private bool _useUnscaledTime;
 
             public float Duration => _duration;
             public AnimationCurve Easing => _easing;
+            public bool UseUnscaledTime => _useUnscaledTime;
             public bool IsConfigured => _duration > 0f && _easing != null && _easing.length > 0;
 
             internal bool TryValidate(string label, out string error)
@@ -68,7 +71,7 @@ namespace Decay
         [Header("Coded Destination Motion")]
         [Tooltip("Board-to-board swap travel. Semantic destinations still come from BattleSceneDiceLayout anchors.")]
         [SerializeField] private CodedMotionSettings _boardSwap = new CodedMotionSettings();
-        [Tooltip("Reserved shared tuning for destination settle/correction where a presentation requires it.")]
+        [Tooltip("Placement/drop correction into a semantic board anchor. Per-die settle juice can layer afterward.")]
         [SerializeField] private CodedMotionSettings _diceSettle = new CodedMotionSettings();
         [Tooltip("Reserved for the later Inventory pass. Inventory anchors remain semantic presentation destinations.")]
         [SerializeField] private CodedMotionSettings _inventoryReturn = new CodedMotionSettings();
