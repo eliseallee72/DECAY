@@ -56,7 +56,7 @@ namespace Decay
         [SerializeField, Min(0f)] private float _enemySetupStartStagger;
 
         [Header("Roll")]
-        [Tooltip("Future randomized start offset range for dice Roll presentation. Pass 1 starts authored Roll hooks together.")]
+        [Tooltip("Presentation-only randomized start offset range for each die's authored Roll animation. Zero/zero starts all dice together. This never changes authoritative roll results.")]
         [SerializeField] private Vector2 _rollStartOffsetRange;
 
         [Header("Enemy Reposition")]
