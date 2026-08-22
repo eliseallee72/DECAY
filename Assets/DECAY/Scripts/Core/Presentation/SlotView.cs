@@ -10,6 +10,10 @@ namespace Decay
     /// </summary>
     public sealed class SlotView : MonoBehaviour
     {
+        [Header("Animator")]
+        [Tooltip("Single Animator used by this SlotView. If empty, the View auto-finds an Animator on this object or its children.")]
+        [SerializeField] private Animator _animator;
+
         [Header("Persistent Authoritative Presentation")]
         [Tooltip("Animator int representing the authoritative SlotCondition. The Animator decides how each value looks.")]
         [SerializeField] private AnimatorIntPresentationBinding _conditionPresentation = new AnimatorIntPresentationBinding();
@@ -34,6 +38,9 @@ namespace Decay
 
         public bool TryValidate(out string error)
         {
+            ResolveAnimatorReference();
+            BindPresentationAnimator();
+
             return _conditionPresentation.TryValidate($"{name} Slot Condition", out error)
                 && _reconcilePresentation.TryValidate($"{name} Reconcile", out error)
                 && _checkedPresentation.TryValidate($"{name} Checked", out error)
@@ -74,7 +81,39 @@ namespace Decay
             CancelOneShot(_scorePresentation, ref _scoreCompletion);
         }
 
+        private void Awake()
+        {
+            ResolveAnimatorReference();
+            BindPresentationAnimator();
+        }
+
+        private void OnValidate()
+        {
+            ResolveAnimatorReference();
+            BindPresentationAnimator();
+        }
+
         private void OnDisable() => CancelAllPresentation();
+
+        private void ResolveAnimatorReference()
+        {
+            if (_animator != null)
+                return;
+
+            _animator = GetComponent<Animator>();
+            if (_animator == null)
+                _animator = GetComponentInChildren<Animator>(true);
+        }
+
+        private void BindPresentationAnimator()
+        {
+            _conditionPresentation.BindAnimator(_animator);
+            _reconcilePresentation.BindAnimator(_animator);
+            _checkedPresentation.BindAnimator(_animator);
+            _breakPresentation.BindAnimator(_animator);
+            _unstablePresentation.BindAnimator(_animator);
+            _scorePresentation.BindAnimator(_animator);
+        }
 
         private static void StartAuthoredPresentation(
             AnimatorTriggerPresentationBinding binding,
